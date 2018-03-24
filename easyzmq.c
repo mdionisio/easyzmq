@@ -9,10 +9,11 @@
 #include <stdint.h>
 
 #define assert_errno(x, message, ...) do { \
-                            if (G_UNLIKELY(!(x))) { \
+                            int _tmp_ = (x); \
+                            if (G_UNLIKELY(!_tmp_)) { \
                                 fprintf(stderr, message, ##__VA_ARGS__); \
                             } \
-                            assert(x); \
+                            assert(_tmp_); \
                         } while (0);
 
 struct _ZmqSource {
