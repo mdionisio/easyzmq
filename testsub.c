@@ -1,0 +1,97 @@
+// test with:
+// export G_MESSAGES_DEBUG=all
+
+/* 
+ * File:   test.c
+ * Author: mdionisio
+ *
+ * Created on 5 dicembre 2016, 12.22
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "easyzmq.h"
+#include <zmq.h>
+
+#include <assert.h>
+
+#include <string.h>
+
+#include <sys/time.h>
+#include <errno.h>
+
+static void *zmq_context = NULL;
+static GMainLoop *loop = NULL;
+
+
+gboolean sub_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+    static int counter = 0;
+    assert(buf != NULL);
+    assert(len > 0);
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    printf("%-10ld: sub socket receive: len:%u\n", msec, (unsigned int) len);
+    
+    counter++;
+    
+    return TRUE;
+}
+
+const char default_address[] = "tcp://127.0.0.1:61000";
+
+/*
+ * 
+ */
+int main(int argc, char** argv) {
+    const char *address = default_address;
+    zmq_context = zmq_ctx_new ();
+    
+    loop = g_main_loop_new(NULL, FALSE);
+    
+    void *subscriber = zmq_socket (zmq_context, ZMQ_SUB);
+    
+    {
+        int timeoutms = 1000;
+        zmq_setsockopt(subscriber, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
+    }
+  
+    if (argc >= 2) {
+        address = argv[1];
+    }
+    printf("address: %s\n", address);
+    zmq_connect (subscriber, address);
+    
+    GZmqSource *gzmq_subscriber = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, subscriber, 128*1024);
+    g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_subscriber);
+    assert( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE);
+    
+    
+    
+    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+        
+    g_main_loop_run(loop);
+
+    g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
+    
+    if (loop != NULL) {
+        g_debug("[%s:%d] unref mainloop", __func__, __LINE__);
+        g_main_loop_unref(loop);
+        loop = NULL;
+    }
+    
+    if (gzmq_subscriber != NULL) {
+        g_debug("[%s:%d] destroy gzmq_subscriber", __func__, __LINE__);
+        g_zmq_source_close(&gzmq_subscriber);
+    }
+    
+    if (NULL != zmq_context) {
+        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
+        zmq_ctx_term (zmq_context);
+        zmq_context = NULL;
+    }
+    
+    return (EXIT_SUCCESS);
+}
+
