@@ -1,0 +1,163 @@
+// test with:
+// export G_MESSAGES_DEBUG=all
+
+/* 
+ * File:   test.c
+ * Author: mdionisio
+ *
+ * Created on 5 dicembre 2016, 12.22
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "easyzmq.h"
+#include <zmq.h>
+
+#include <assert.h>
+
+#include <string.h>
+
+#include <sys/time.h>
+#include <errno.h>
+
+static void *zmq_context = NULL;
+static GMainLoop *loop = NULL;
+
+const char default_address[] = "tcp://127.0.0.1:5555";
+const char *address = default_address;
+
+typedef struct timeout_data {
+    GZmqSource *gzmq_requester;
+} typeoutdata_t;
+
+static typeoutdata_t data_timeout = { NULL };
+
+void init_requester(void) {
+    int rc __attribute__((unused));
+    void *requester = zmq_socket (zmq_context, ZMQ_REQ);
+
+    if (data_timeout.gzmq_requester != NULL) {
+        g_zmq_source_unref(data_timeout.gzmq_requester);
+        data_timeout.gzmq_requester = NULL;
+    }
+    
+    {
+        int linger = 1000;
+        zmq_setsockopt(requester, ZMQ_LINGER, &linger, sizeof(linger));
+    }
+    
+    {
+        int timeoutms = 1000;
+        zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
+    }
+    
+    {
+        int timeoutms = 1000;
+        zmq_setsockopt(requester, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
+    }
+
+    rc = zmq_connect (requester, address);
+    assert (rc == 0);
+    
+    GZmqSource *gzmq_requester = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, requester, 0);
+    g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
+
+    data_timeout.gzmq_requester = gzmq_requester;
+}
+
+gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+    struct timeval now;
+        gettimeofday(&now, NULL);
+        long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    if ((buf != NULL) && (len > 0)) {
+        const gchar* data = buf;
+        printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
+    } else {
+        printf("%-10ld: req socket timeout\n", msec);
+        init_requester();
+    }
+    
+    return TRUE;
+}
+
+
+gboolean timeout_cb (gpointer user_data) {
+    GZmqSource *gzmq_requester = data_timeout.gzmq_requester;
+    
+    static int counter = 0;
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    printf("%-10ld: send request counter: %d\n", msec, counter);
+    
+    gchar *datasend = g_strdup_printf("req counter: %d\n", counter);
+    size_t len = strlen(datasend) + 1;
+    
+    if (gzmq_requester != NULL) {
+        //assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
+        if ( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) != TRUE) {
+            printf("req socket send failed\n");
+        }
+    }
+    
+    g_free(datasend);
+    
+    counter++;
+    
+    if (counter < 15) {
+        return G_SOURCE_CONTINUE;
+    } else {
+        if (loop != NULL) {
+            g_main_loop_quit(loop);
+        }
+        return G_SOURCE_REMOVE;
+    }
+}
+
+
+/*
+ * 
+ */
+int main(int argc, char** argv) {
+    address = default_address;
+    
+    zmq_context = zmq_ctx_new ();
+    
+    loop = g_main_loop_new(NULL, FALSE);
+
+    if (argc >= 2) {
+        address = argv[1];
+    }
+    
+    init_requester();
+    
+    g_debug("[%s:%d] start mainloop", __func__, __LINE__);    
+    
+    g_timeout_add(2000, timeout_cb, NULL);
+        
+    g_main_loop_run(loop);
+
+    g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
+    
+    if (loop != NULL) {
+        g_debug("[%s:%d] unref mainloop", __func__, __LINE__);
+        g_main_loop_unref(loop);
+        loop = NULL;
+    }
+    
+    if (data_timeout.gzmq_requester != NULL) {
+        g_debug("[%s:%d] destroy gzmq_requester", __func__, __LINE__);
+        g_zmq_source_close(&data_timeout.gzmq_requester);
+        data_timeout.gzmq_requester = NULL;
+    }
+    
+    if (NULL != zmq_context) {
+        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
+        zmq_ctx_term (zmq_context);
+        zmq_context = NULL;
+    }
+    
+    return (EXIT_SUCCESS);
+}
+

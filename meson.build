@@ -26,3 +26,15 @@ executable('testzmqsub',
 	include_directories : inc,
 	dependencies : [zmqdep, glibdep],
 	link_with : [easyzmq])
+
+executable('testzmqresp', 
+	['testresp.c'], 
+	include_directories : inc,
+	dependencies : [zmqdep, glibdep],
+	link_with : [easyzmq])
+
+executable('testzmqreq', 
+	['testreq.c'], 
+	include_directories : inc,
+	dependencies : [zmqdep, glibdep],
+	link_with : [easyzmq])
