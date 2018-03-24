@@ -166,7 +166,7 @@ _g_zmq_source_finalize(GSource *source) {
 
     if (self->zmq_owned_socket != NULL) {
         g_debug("[%s:%d] (%p) close zmq", __func__, __LINE__, source);
-        zmq_close(self->zmq_owned_socket);
+        assert_errno(zmq_close(self->zmq_owned_socket) == 0, "error %s[%d] on zmq_close", clean_errno(), errno);
         self->zmq_owned_socket = NULL;
     }
 
@@ -282,12 +282,12 @@ gboolean send_zmq_resp(GZmqSource *zmq_source, void *buf, size_t len) {
     assert(len > 0);
 
     zmq_msg_t message;
-    zmq_msg_init_size(&message, len);
+    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), errno);
     memcpy(zmq_msg_data(&message), buf, len);
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
-        zmq_msg_close(&message);
+        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), errno);
         g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, errno, strerror(errno), zmq_source, zmq_source->zmq_owned_socket);
         return FALSE;
     } else {
@@ -433,14 +433,14 @@ gboolean send_zmq_pub(GZmqSource *zmq_source, void *buf, size_t len) {
     gboolean ret = FALSE;
 
     zmq_msg_t message;
-    zmq_msg_init_size(&message, len);
+    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), errno);
     memcpy(zmq_msg_data(&message), buf, len);
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
 
     if (r == -1) {
-        zmq_msg_close(&message);
+        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), errno);
         g_debug("[%s:%d] send pub message error (%d, %s)", __func__, __LINE__, errno, strerror(errno));
     } else {
         g_debug("[%s:%d] send pub message ok", __func__, __LINE__);
