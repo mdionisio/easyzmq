@@ -248,7 +248,7 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
             g_debug("[%s:%d] g_source_set_callback", __func__, __LINE__);
             g_source_attach((GSource *) source, l_context);
 
-            g_debug("[%s:%d] g_source_attach", __func__, __LINE__);
+            g_debug("[%s:%d] GZmqSource created and attached: %p", __func__, __LINE__, source);
 
         } else {
             g_debug("[%s:%d] GZmqSource create error", __func__, __LINE__);
@@ -261,7 +261,6 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
         source = NULL;
     }
 
-    g_debug("[%s:%d] GZmqSource created: %p", __func__, __LINE__, source);
     return source;
 }
 
