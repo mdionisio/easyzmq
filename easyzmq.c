@@ -382,12 +382,12 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) req_callback, pdata, req_callback_data_free);
 
     zmq_msg_t message;
-    zmq_msg_init_size(&message, len);
+    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), errno);
     memcpy(zmq_msg_data(&message), buf, len);
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
-        zmq_msg_close(&message);
+        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), errno);
         g_debug("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, errno, strerror(errno), zmq_source, zmq_source->zmq_owned_socket);
         g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
         g_debug("[%s:%d] error managed", __func__, __LINE__);
