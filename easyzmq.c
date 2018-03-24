@@ -306,23 +306,23 @@ typedef struct req_callback_data {
     guint timeout_handler;
 } req_callback_data_t;
 
-void req_callback_data_free(gpointer data) {
+static void req_callback_data_free(gpointer data) {
     if (data != NULL) {
-        req_callback_data_t *pdata = data;
+        req_callback_data_t * const pdata = data;
         if (G_LIKELY((pdata->notify != NULL) && (pdata->user_data != NULL))) {
             g_debug("[%s:%d] free user data", __func__, __LINE__);
             pdata->notify(pdata->user_data);
-            pdata->user_data = NULL;
-            pdata->notify = NULL;
         }
+        pdata->user_data = NULL;
+        pdata->notify = NULL;
         g_debug("[%s:%d] free all (%p)", __func__, __LINE__, data);
-        g_free(data);
+        g_slice_free (req_callback_data_t, data);
     }
 }
 
 static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
     assert(user_data != NULL);
-    req_callback_data_t *pdata = user_data;
+    req_callback_data_t * const pdata = user_data;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, zmq_source);
     if (pdata->timeout_handler == 0) {
         g_debug("[%s:%d] timeout already manage so skeep this (%p)", __func__, __LINE__, zmq_source);
@@ -339,11 +339,11 @@ static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpoi
 
 gboolean req_timeout_callback(gpointer user_data) {
     assert(user_data != NULL);
-    req_callback_data_t *pdata = (req_callback_data_t*) user_data;
+    req_callback_data_t * const pdata = (req_callback_data_t*) user_data;
     pdata->timeout_handler = 0;
-    void * user_data2 = pdata->user_data;
+    void * const user_data2 = pdata->user_data;
     GDestroyNotify notify2 = pdata->notify;
-    GZmqSource *zmq_source = pdata->zmq_source;
+    GZmqSource * const zmq_source = pdata->zmq_source;
     GZmqSourceFunc callback = pdata->callback;
     pdata->notify = NULL;
     pdata->user_data = NULL;
@@ -372,7 +372,7 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t
 
     gboolean ret = FALSE;
 
-    req_callback_data_t *pdata = g_new0(req_callback_data_t, 1);
+    req_callback_data_t * const pdata = g_slice_new0(req_callback_data_t);
     pdata->zmq_source = zmq_source;
     pdata->user_data = user_data;
     pdata->notify = notify;
