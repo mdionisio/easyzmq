@@ -303,6 +303,7 @@ typedef struct req_callback_data {
     GZmqSourceFunc callback;
     GZmqSource *zmq_source;
     guint timeout_handler;
+    guint timeoutms;
 } req_callback_data_t;
 
 static void req_callback_data_free(gpointer data) {
@@ -323,15 +324,18 @@ static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpoi
     assert(user_data != NULL);
     req_callback_data_t * const pdata = user_data;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, zmq_source);
-    if (pdata->timeout_handler == 0) {
+    if ((pdata->timeout_handler == 0) && (pdata->timeoutms > 0U)) {
         g_debug("[%s:%d] timeout already manage so skeep this (%p)", __func__, __LINE__, zmq_source);
     } else {
-        g_source_remove(pdata->timeout_handler);
-        pdata->timeout_handler = 0;
+        if (pdata->timeout_handler > 0U) {
+            g_source_remove(pdata->timeout_handler);
+            pdata->timeout_handler = 0U;
+        }
+        pdata->timeoutms = 0U;
         if (G_LIKELY(pdata->callback != NULL)) {
             pdata->callback(zmq_source, buf, len, pdata->user_data);
-            g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
         }
+        g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
     }
     return G_SOURCE_CONTINUE;
 }
@@ -339,7 +343,8 @@ static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpoi
 gboolean req_timeout_callback(gpointer user_data) {
     assert(user_data != NULL);
     req_callback_data_t * const pdata = (req_callback_data_t*) user_data;
-    pdata->timeout_handler = 0;
+    pdata->timeout_handler = 0U;
+    pdata->timeoutms = 0U;
     void * const user_data2 = pdata->user_data;
     GDestroyNotify notify2 = pdata->notify;
     GZmqSource * const zmq_source = pdata->zmq_source;
@@ -347,9 +352,9 @@ gboolean req_timeout_callback(gpointer user_data) {
     pdata->notify = NULL;
     pdata->user_data = NULL;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, zmq_source);
+    g_debug("[%s:%d] change callback", __func__, __LINE__);
+    g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL); // this call means destroy user_data
     if (G_LIKELY(callback != NULL)) {
-        g_debug("[%s:%d] change callback", __func__, __LINE__);
-        g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL); // this call means destroy user_data
         // so all the used parameter is saved before
         // use it
         g_debug("[%s:%d] call callback", __func__, __LINE__);
@@ -377,6 +382,7 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t
     pdata->notify = notify;
     pdata->callback = cb;
     pdata->timeout_handler = 0U;
+    pdata->timeoutms = 0U;
 
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) req_callback, pdata, req_callback_data_free);
 
@@ -393,8 +399,11 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t
     } else {
         g_debug("[%s:%d] send req message ok [%p,%p]", __func__, __LINE__, zmq_source, zmq_source->zmq_owned_socket);
         // add timeout before call error callback
-        if (timeoutms != 0) {
+        if (timeoutms > 0U) {
             pdata->timeout_handler = g_timeout_add(timeoutms, req_timeout_callback, pdata);
+            if (pdata->timeout_handler > 0U) {
+                pdata->timeoutms = timeoutms;
+            }
         }
         ret = TRUE;
     }
@@ -435,8 +444,6 @@ gboolean send_zmq_pub(GZmqSource *zmq_source, void *buf, size_t len) {
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), errno);
     memcpy(zmq_msg_data(&message), buf, len);
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
-
-    g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
 
     if (r == -1) {
         assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), errno);
