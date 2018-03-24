@@ -344,10 +344,10 @@ gboolean req_timeout_callback(gpointer user_data) {
         // use it
         g_debug("[%s:%d] call callback", __func__, __LINE__);
         callback(zmq_source, NULL, 0, user_data2);
-        if (G_LIKELY((notify2 != NULL) && (user_data2 != NULL))) {
-            g_debug("[%s:%d] free user data", __func__, __LINE__);
-            notify2(user_data2);
-        }
+    }
+    if (G_LIKELY((notify2 != NULL) && (user_data2 != NULL))) {
+        g_debug("[%s:%d] free user data", __func__, __LINE__);
+        notify2(user_data2);
     }
 
     return G_SOURCE_REMOVE;
