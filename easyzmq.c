@@ -247,6 +247,7 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
             g_source_set_callback((GSource *) source, (GSourceFunc) fake_callback, NULL, NULL);
             g_debug("[%s:%d] g_source_set_callback", __func__, __LINE__);
             g_source_attach((GSource *) source, l_context);
+            g_zmq_source_unref(source);
 
             g_debug("[%s:%d] GZmqSource created and attached: %p", __func__, __LINE__, source);
 
