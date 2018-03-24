@@ -57,8 +57,6 @@ gboolean timeout_cb (gpointer user_data) {
     } else {
         if (loop != NULL) {
             g_main_loop_quit(loop);
-            g_main_loop_unref(loop);
-            loop = NULL;
         }
         return G_SOURCE_REMOVE;
     }
