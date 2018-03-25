@@ -33,14 +33,15 @@ typedef struct timeout_data {
 
 static typeoutdata_t data_timeout = { NULL };
 
-void init_requester(void) {
+gboolean init_requester(gpointer user_data) {
     int rc __attribute__((unused));
-    void *requester = zmq_socket (zmq_context, ZMQ_REQ);
 
     if (data_timeout.gzmq_requester != NULL) {
         g_zmq_source_unref(data_timeout.gzmq_requester);
         data_timeout.gzmq_requester = NULL;
     }
+
+    void *requester = zmq_socket (zmq_context, ZMQ_REQ);
     
     {
         int linger = 1000;
@@ -58,12 +59,18 @@ void init_requester(void) {
     }
 
     rc = zmq_connect (requester, address);
-    assert (rc == 0);
+    if (rc != 0) {
+        g_timeout_add(2000, init_requester, NULL);
+        zmq_close(requester);
+    } else {
     
-    GZmqSource *gzmq_requester = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, requester, 0);
-    g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
+        GZmqSource *gzmq_requester = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, requester, 0);
+        g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
 
-    data_timeout.gzmq_requester = gzmq_requester;
+        data_timeout.gzmq_requester = gzmq_requester;
+    }
+
+    return G_SOURCE_REMOVE;
 }
 
 gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
@@ -75,7 +82,8 @@ gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer u
         printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
     } else {
         printf("%-10ld: req socket timeout\n", msec);
-        init_requester();
+        //g_idle_add(init_requester, NULL);
+        init_requester(NULL);
     }
     
     return TRUE;
@@ -130,7 +138,7 @@ int main(int argc, char** argv) {
         address = argv[1];
     }
     
-    init_requester();
+    init_requester(NULL);
     
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);    
     
