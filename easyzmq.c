@@ -23,6 +23,7 @@ struct _ZmqSource {
     void *zmq_context;
     void *msg_receive;
     size_t size_receive;
+    gint ref_count;
 };
 
 #define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
@@ -186,12 +187,23 @@ static gboolean fake_callback(GZmqSource *zmq_source, void *buf, size_t len, gpo
 
 void g_zmq_source_ref(GZmqSource *self) {
     g_return_if_fail(self != NULL);
+    g_warn_if_fail(self->ref_count != 0);
+
+    self->ref_count ++;
 
     g_source_ref((GSource *) self);
 }
 
 void g_zmq_source_unref(GZmqSource *self) {
     g_return_if_fail(self != NULL);
+    if (self->ref_count > 0) {
+        self->ref_count --;
+    } else {
+        g_warn_if_reached();
+    }
+    if (self->ref_count == 0) {
+        g_zmq_source_destroy(self);
+    }
 
     g_source_unref((GSource *) self);
 }
@@ -233,6 +245,7 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
         source->size_receive = 0;
     }
     source->fd = NULL;
+    source->ref_count = 1;
 
     int fd = 0;
     size_t fd_len = sizeof (fd);
@@ -247,9 +260,9 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
             g_source_set_callback((GSource *) source, (GSourceFunc) fake_callback, NULL, NULL);
             g_debug("[%s:%d] g_source_set_callback", __func__, __LINE__);
             g_source_attach((GSource *) source, l_context);
-            g_zmq_source_unref(source);
+            g_source_unref((GSource *) source);
 
-            g_debug("[%s:%d] GZmqSource created and attached: %p", __func__, __LINE__, source);
+            g_debug("[%s:%d] GZmqSource created and attached: %p ref_count %d", __func__, __LINE__, source, source->ref_count);
 
         } else {
             g_debug("[%s:%d] GZmqSource create error", __func__, __LINE__);
@@ -261,7 +274,7 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
         g_zmq_source_unref(source);
         source = NULL;
     }
-
+    
     return source;
 }
 
