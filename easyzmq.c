@@ -202,10 +202,10 @@ void g_zmq_source_unref(GZmqSource *self) {
         g_warn_if_reached();
     }
     if (self->ref_count == 0) {
-        g_zmq_source_destroy(self);
+        g_source_destroy((GSource *) self);
+    } else {
+        g_source_unref((GSource *) self);
     }
-
-    g_source_unref((GSource *) self);
 }
 
 void g_zmq_source_destroy(GZmqSource *self) {
