@@ -13,6 +13,7 @@
 
 #include "easyzmq.h"
 #include <zmq.h>
+#include <glib-unix.h>
 
 #include <assert.h>
 
@@ -64,6 +65,19 @@ gboolean timeout_cb (gpointer user_data) {
 
 const char default_address[] = "tcp://0.0.0.0:61000";
 
+static gboolean signal_handler (gpointer user_data)
+{
+    int signo = GPOINTER_TO_INT (user_data);
+    switch (signo) {
+        case SIGINT:
+            g_main_loop_quit(loop);
+            break;
+        default:
+            break;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 /*
  * 
  */
@@ -111,6 +125,8 @@ int main(int argc, char** argv) {
     data_timeout.gzmq_publisher = gzmq_publisher;
     
     g_timeout_add(1000, timeout_cb, &data_timeout);
+
+    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
         
     g_main_loop_run(loop);
 

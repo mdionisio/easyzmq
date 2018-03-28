@@ -13,6 +13,7 @@
 
 #include "easyzmq.h"
 #include <zmq.h>
+#include <glib-unix.h>
 
 #include <assert.h>
 
@@ -41,6 +42,19 @@ gboolean sub_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer u
 
 const char default_address[] = "tcp://127.0.0.1:61000";
 
+static gboolean signal_handler (gpointer user_data)
+{
+    int signo = GPOINTER_TO_INT (user_data);
+    switch (signo) {
+        case SIGINT:
+            g_main_loop_quit(loop);
+            break;
+        default:
+            break;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 /*
  * 
  */
@@ -67,9 +81,9 @@ int main(int argc, char** argv) {
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_subscriber);
     assert( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE);
     
-    
-    
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+
+    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
         
     g_main_loop_run(loop);
 

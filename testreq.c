@@ -13,6 +13,7 @@
 
 #include "easyzmq.h"
 #include <zmq.h>
+#include <glib-unix.h>
 
 #include <assert.h>
 
@@ -123,6 +124,18 @@ gboolean timeout_cb (gpointer user_data) {
     }
 }
 
+static gboolean signal_handler (gpointer user_data)
+{
+    int signo = GPOINTER_TO_INT (user_data);
+    switch (signo) {
+        case SIGINT:
+            g_main_loop_quit(loop);
+            break;
+        default:
+            break;
+    }
+    return G_SOURCE_CONTINUE;
+}
 
 /*
  * 
@@ -143,6 +156,8 @@ int main(int argc, char** argv) {
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);    
     
     g_timeout_add(2000, timeout_cb, NULL);
+
+    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
         
     g_main_loop_run(loop);
 

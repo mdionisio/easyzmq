@@ -13,6 +13,7 @@
 
 #include "easyzmq.h"
 #include <zmq.h>
+#include <glib-unix.h>
 
 #include <assert.h>
 
@@ -70,6 +71,19 @@ gboolean resp_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer 
     return TRUE;
 }
 
+static gboolean signal_handler (gpointer user_data)
+{
+    int signo = GPOINTER_TO_INT (user_data);
+    switch (signo) {
+        case SIGINT:
+            g_main_loop_quit(loop);
+            break;
+        default:
+            break;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 /*
  * 
  */
@@ -108,6 +122,8 @@ int main(int argc, char** argv) {
     g_debug("[%s:%d] gzmq_responder created (%p)", __func__, __LINE__, gzmq_responder);
     
     assert( recv_zmq_resp(gzmq_responder, resp_callback, NULL, NULL) == TRUE);
+
+    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
     
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
         
