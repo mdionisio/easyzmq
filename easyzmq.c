@@ -214,13 +214,6 @@ void g_zmq_source_destroy(GZmqSource *self) {
     g_source_destroy((GSource *) self);
 }
 
-void g_zmq_source_close(GZmqSource **self) {
-    g_return_if_fail(self != NULL);
-    g_zmq_source_destroy(*self);
-    g_zmq_source_unref(*self);
-    *self = NULL;
-}
-
 GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void *l_zmq_socket, size_t max_mem_size) {
     GZmqSource *source = NULL;
 

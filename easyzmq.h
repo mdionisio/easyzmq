@@ -34,9 +34,9 @@ extern "C" {
     gboolean recv_zmq_resp(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_resp(GZmqSource *zmq_source, void *buf, size_t len);
     
-    void g_zmq_source_close(GZmqSource **self);
-    
     void g_zmq_source_destroy(GZmqSource *self);
+
+    static inline void g_zmq_source_close(GZmqSource **self) { if (self != NULL) { g_zmq_source_destroy(*self); *self = NULL;} }
     
     void g_zmq_source_ref(GZmqSource *self);
     
