@@ -52,7 +52,7 @@ gboolean timeout_cb (gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     const gchar* data = buf;
     assert(buf != NULL);
     assert(len > 0);
@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
     rc = zmq_bind (responder, address);
     assert (rc == 0);
     
-    GZmqSource *gzmq_responder = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, responder, 0);
+    GZmqSource *gzmq_responder = g_zmq_source_new(zmq_context, responder, 0, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_responder created (%p)", __func__, __LINE__, gzmq_responder);
     
     assert( recv_zmq_resp(gzmq_responder, resp_callback, NULL, NULL) == TRUE);

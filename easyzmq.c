@@ -4,7 +4,6 @@
 #include <glib.h>
 #include <zmq.h>
 
-#include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 
@@ -13,7 +12,7 @@
                             if (G_UNLIKELY(!_tmp_)) { \
                                 fprintf(stderr, message, ##__VA_ARGS__); \
                             } \
-                            assert(_tmp_); \
+                            g_assert(_tmp_); \
                         } while (0);
 
 struct _ZmqSource {
@@ -214,7 +213,14 @@ void g_zmq_source_destroy(GZmqSource *self) {
     g_source_destroy((GSource *) self);
 }
 
-GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void *l_zmq_socket, size_t max_mem_size) {
+GZmqSource * g_zmq_source_new(void *l_zmq_context, void *l_zmq_socket, size_t max_mem_size, GMainContext *l_context) {
+    g_assert(l_zmq_socket != NULL);
+    g_assert(l_zmq_context != NULL);
+    if (l_context == NULL) {
+        l_context = g_main_context_default();
+    }
+    g_assert(l_context != NULL);
+
     GZmqSource *source = NULL;
 
     g_debug("[%s:%d] GZmqSource creating ...", __func__, __LINE__);
@@ -274,18 +280,18 @@ GZmqSource * g_zmq_source_new(GMainContext *l_context, void *l_zmq_context, void
 // RESPONSE SOCKET
 
 gboolean recv_zmq_resp(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    assert(zmq_source != NULL);
+    g_assert(zmq_source != NULL);
     g_debug("[%s:%d] register for responce receiving [%p]", __func__, __LINE__, zmq_source);
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) cb, user_data, notify);
 
     return TRUE;
 }
 
-gboolean send_zmq_resp(GZmqSource *zmq_source, void *buf, size_t len) {
-    assert(zmq_source != NULL);
-    assert(zmq_source->zmq_owned_socket != NULL);
-    assert(buf != NULL);
-    assert(len > 0);
+gboolean send_zmq_resp(GZmqSource *zmq_source, const void *buf, size_t len) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), errno);
@@ -327,8 +333,8 @@ static void req_callback_data_free(gpointer data) {
     }
 }
 
-static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
-    assert(user_data != NULL);
+static gboolean req_callback(GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+    g_assert(user_data != NULL);
     req_callback_data_t * const pdata = user_data;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, zmq_source);
     if ((pdata->timeout_handler == 0) && (pdata->timeoutms > 0U)) {
@@ -348,7 +354,7 @@ static gboolean req_callback(GZmqSource *zmq_source, void *buf, size_t len, gpoi
 }
 
 gboolean req_timeout_callback(gpointer user_data) {
-    assert(user_data != NULL);
+    g_assert(user_data != NULL);
     req_callback_data_t * const pdata = (req_callback_data_t*) user_data;
     pdata->timeout_handler = 0U;
     pdata->timeoutms = 0U;
@@ -375,11 +381,11 @@ gboolean req_timeout_callback(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    assert(zmq_source != NULL);
-    assert(zmq_source->zmq_owned_socket != NULL);
-    assert(buf != NULL);
-    assert(len > 0);
+gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const void *buf, size_t len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
 
     gboolean ret = FALSE;
 
@@ -421,8 +427,8 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t
 // SUB SOCKET
 
 gboolean recv_zmq_sub(GZmqSource *zmq_source, const gchar* filter, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    assert(zmq_source != NULL);
-    assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
 
     g_debug("[%s:%d] register for subscriber receiving", __func__, __LINE__);
 
@@ -439,11 +445,11 @@ gboolean recv_zmq_sub(GZmqSource *zmq_source, const gchar* filter, GZmqSourceFun
 
 // PUB SOCKET
 
-gboolean send_zmq_pub(GZmqSource *zmq_source, void *buf, size_t len) {
-    assert(zmq_source != NULL);
-    assert(zmq_source->zmq_owned_socket != NULL);
-    assert(buf != NULL);
-    assert(len > 0);
+gboolean send_zmq_pub(GZmqSource *zmq_source, const void *buf, size_t len) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
 
     gboolean ret = FALSE;
 

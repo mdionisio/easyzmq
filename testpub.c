@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
     rc = zmq_bind (publisher, address);
     assert (rc == 0);
     
-    GZmqSource *gzmq_publisher = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, publisher, 0);
+    GZmqSource *gzmq_publisher = g_zmq_source_new(zmq_context, publisher, 0, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_publisher);
     
     

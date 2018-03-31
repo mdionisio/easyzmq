@@ -26,7 +26,7 @@ static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
 
-gboolean sub_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     static int counter = 0;
     assert(buf != NULL);
     assert(len > 0);
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     printf("address: %s\n", address);
     zmq_connect (subscriber, address);
     
-    GZmqSource *gzmq_subscriber = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, subscriber, 128*1024);
+    GZmqSource *gzmq_subscriber = g_zmq_source_new(zmq_context, subscriber, 128*1024, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_subscriber);
     assert( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE);
     

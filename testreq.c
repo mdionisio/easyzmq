@@ -65,7 +65,7 @@ gboolean init_requester(gpointer user_data) {
         zmq_close(requester);
     } else {
     
-        GZmqSource *gzmq_requester = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, requester, 0);
+        GZmqSource *gzmq_requester = g_zmq_source_new(zmq_context, requester, 0, g_main_loop_get_context(loop));
         g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
 
         data_timeout.gzmq_requester = gzmq_requester;
@@ -74,7 +74,7 @@ gboolean init_requester(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     struct timeval now;
         gettimeofday(&now, NULL);
         long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
@@ -88,6 +88,12 @@ gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer u
     }
     
     return TRUE;
+}
+
+void destroy_userdata (gpointer data) {
+    char * cdata = (char*)data;
+    printf("request to destroy user data: %s\n", cdata);
+    g_free(data);
 }
 
 
@@ -105,7 +111,8 @@ gboolean timeout_cb (gpointer user_data) {
     
     if (gzmq_requester != NULL) {
         //assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
-        if ( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) != TRUE) {
+        gchar *userdata = g_strdup_printf("%d\n", counter);
+        if ( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, userdata, destroy_userdata) != TRUE) {
             printf("req socket send failed\n");
         }
     }

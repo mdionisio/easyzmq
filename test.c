@@ -25,7 +25,7 @@
 static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
-gboolean req_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     const gchar* data = buf;
     assert(buf != NULL);
     assert(len > 0);
@@ -80,7 +80,7 @@ gboolean timeout_cb (gpointer user_data) {
     }
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     const gchar* data = buf;
     static int counter = 0;
     assert(buf != NULL);
@@ -101,7 +101,7 @@ gboolean resp_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer 
     return TRUE;
 }
 
-gboolean sub_callback (GZmqSource *zmq_source, void *buf, size_t len, gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
     const gchar* data = buf;
     static int counter = 0;
     assert(buf != NULL);
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     rc = zmq_bind (responder, "tcp://0.0.0.0:5555");
     assert (rc == 0);
     
-    GZmqSource *gzmq_respender = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, responder, 1024*1024);
+    GZmqSource *gzmq_respender = g_zmq_source_new(zmq_context, responder, 1024*1024, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_respender created (%p)", __func__, __LINE__, gzmq_respender);
     
     assert( recv_zmq_resp(gzmq_respender, resp_callback, NULL, NULL) == TRUE);
@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
     
     zmq_connect (requester, "tcp://localhost:5555");
     
-    GZmqSource *gzmq_requester = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, requester, 1024*1024);
+    GZmqSource *gzmq_requester = g_zmq_source_new(zmq_context, requester, 1024*1024, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
     
  
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
   
     zmq_connect (subscriber, "tcp://localhost:5556");
     
-    GZmqSource *gzmq_subscriber = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, subscriber, 1024*1024);
+    GZmqSource *gzmq_subscriber = g_zmq_source_new(zmq_context, subscriber, 1024*1024, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_subscriber);
     assert( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE);
     
@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
     rc = zmq_bind (publisher, "tcp://0.0.0.0:5556");
     assert (rc == 0);
     
-    GZmqSource *gzmq_publisher = g_zmq_source_new(g_main_loop_get_context(loop), zmq_context, publisher, 0);
+    GZmqSource *gzmq_publisher = g_zmq_source_new(zmq_context, publisher, 0, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_publisher);   
     
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
