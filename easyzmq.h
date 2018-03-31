@@ -11,11 +11,6 @@
 #include <glib.h>
 #include <zmq.h>
 
-#include <string.h>
-#include <error.h>
-
-#define clean_errno() (errno == 0 ? "None" : strerror(errno))
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,12 +35,20 @@ extern "C" {
     static inline gboolean send_zmq_req_easy(GZmqSource *zmq_source, guint timeoutms, const void *buf, size_t len, GZmqSourceFunc cb, gpointer user_data) {
         return send_zmq_req(zmq_source, timeoutms, buf, len, cb, user_data, NULL);
     }
+
+    gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
+
+    static inline gboolean send_zmq_req_easy_take(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+        return send_zmq_req_take(zmq_source, timeoutms, buf, len, destroy_data, cb, user_data, notify);
+    }
     
     gboolean recv_zmq_sub(GZmqSource *zmq_source, const gchar* filter, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_pub(GZmqSource *zmq_source, const void *buf, size_t len);
+    gboolean send_zmq_pub_take(GZmqSource *zmq_source, void *buf, size_t len, GDestroyNotify destroy_data);
     
     gboolean recv_zmq_resp(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_resp(GZmqSource *zmq_source, const void *buf, size_t len);
+    gboolean send_zmq_resp_take(GZmqSource *zmq_source, void *buf, size_t len, GDestroyNotify destroy_data);
     
     void g_zmq_source_destroy(GZmqSource *self);
 

@@ -45,17 +45,12 @@ gboolean init_requester(gpointer user_data) {
     void *requester = zmq_socket (zmq_context, ZMQ_REQ);
     
     {
-        int linger = 1000;
-        zmq_setsockopt(requester, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
         int timeoutms = 1000;
         zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
     }
     
     {
-        int timeoutms = 1000;
+        int timeoutms = 2000;
         zmq_setsockopt(requester, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
     }
 
@@ -96,6 +91,11 @@ void destroy_userdata (gpointer data) {
     g_free(data);
 }
 
+void destroy_data (gpointer data) {
+    char * cdata = (char*)data;
+    printf("request to destroy data: %s\n", cdata);
+    g_free(data);
+}
 
 gboolean timeout_cb (gpointer user_data) {
     GZmqSource *gzmq_requester = data_timeout.gzmq_requester;
@@ -106,18 +106,18 @@ gboolean timeout_cb (gpointer user_data) {
     long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
     printf("%-10ld: send request counter: %d\n", msec, counter);
     
-    gchar *datasend = g_strdup_printf("req counter: %d\n", counter);
-    size_t len = strlen(datasend) + 1;
-    
     if (gzmq_requester != NULL) {
+        gchar *datasend = g_strdup_printf("req counter: %d\n", counter);
+        size_t len = strlen(datasend) + 1;
+
         //assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
         gchar *userdata = g_strdup_printf("%d\n", counter);
-        if ( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, userdata, destroy_userdata) != TRUE) {
+        if ( send_zmq_req_take(gzmq_requester, 1000, datasend, len, destroy_data, req_callback, userdata, destroy_userdata) != TRUE) {
             printf("req socket send failed\n");
         }
     }
     
-    g_free(datasend);
+    
     
     counter++;
     
