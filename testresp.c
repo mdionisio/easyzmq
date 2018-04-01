@@ -12,7 +12,6 @@
 #include <stdlib.h>
 
 #include "easyzmq.h"
-#include <zmq.h>
 #include <glib-unix.h>
 
 #include <assert.h>
@@ -22,7 +21,6 @@
 #include <sys/time.h>
 #include <errno.h>
 
-static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
 
@@ -89,45 +87,37 @@ static gboolean signal_handler (gpointer user_data)
  */
 int main(int argc, char** argv) {
     const char *address = default_address;
-    int rc __attribute__((unused));
-    zmq_context = zmq_ctx_new ();
+    easy_zmq_init();
     
     loop = g_main_loop_new(NULL, FALSE);
-    
-    void *responder = zmq_socket (zmq_context, ZMQ_REP);    
-    
-    {
-        int linger = 1000;
-        zmq_setsockopt(responder, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(responder, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(responder, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-  
+     
     if (argc >= 2) {
         address = argv[1];
     }
     printf("address: %s\n", address);
-    rc = zmq_bind (responder, address);
-    assert (rc == 0);
     
-    GZmqSource *gzmq_responder = g_zmq_source_new(zmq_context, responder, 0, g_main_loop_get_context(loop));
-    g_debug("[%s:%d] gzmq_responder created (%p)", __func__, __LINE__, gzmq_responder);
-    
-    assert( recv_zmq_resp(gzmq_responder, resp_callback, NULL, NULL) == TRUE);
+    GZmqSource *gzmq_responder = g_zmq_source_rep_new(0, g_main_loop_get_context(loop));
+    if (gzmq_responder != NULL) {
+        g_debug("[%s:%d] gzmq_responder created (%p)", __func__, __LINE__, gzmq_responder);
 
-    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
-    
-    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+        if (g_easyzmq_bind(gzmq_responder, address, NULL) == TRUE ) {
         
-    g_main_loop_run(loop);
+            if( recv_zmq_resp(gzmq_responder, resp_callback, NULL, NULL) == TRUE) {
+
+                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+                
+                g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+                    
+                g_main_loop_run(loop);
+            } else {
+                g_warning("[%s:%d] error resp", __func__, __LINE__);
+            }
+        } else {
+            g_warning("[%s:%d] error bind", __func__, __LINE__);
+        }
+    } else {
+        g_warning("[%s:%d] error creating socket", __func__, __LINE__);
+    }
 
     g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
     
@@ -142,11 +132,7 @@ int main(int argc, char** argv) {
         g_zmq_source_close(&gzmq_responder);
     }
     
-    if (NULL != zmq_context) {
-        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
-        zmq_ctx_term (zmq_context);
-        zmq_context = NULL;
-    }
+    easy_zmq_deinit();
     
     return (EXIT_SUCCESS);
 }

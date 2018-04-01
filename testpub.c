@@ -12,7 +12,6 @@
 #include <stdlib.h>
 
 #include "easyzmq.h"
-#include <zmq.h>
 #include <glib-unix.h>
 
 #include <assert.h>
@@ -22,7 +21,6 @@
 #include <sys/time.h>
 #include <errno.h>
 
-static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
 
@@ -83,52 +81,38 @@ static gboolean signal_handler (gpointer user_data)
  */
 int main(int argc, char** argv) {
     const char *address = default_address;
-    int rc __attribute__((unused));
-    zmq_context = zmq_ctx_new ();
+    easy_zmq_init();
     
     loop = g_main_loop_new(NULL, FALSE);
-    
-    
-    void *publisher = zmq_socket (zmq_context, ZMQ_PUB);
-    
-    {
-        int linger = 1000;
-        zmq_setsockopt(publisher, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(publisher, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(publisher, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
   
     if (argc >= 2) {
         address = argv[1];
     }
     printf("address: %s\n", address);
-    rc = zmq_bind (publisher, address);
-    assert (rc == 0);
     
-    GZmqSource *gzmq_publisher = g_zmq_source_new(zmq_context, publisher, 0, g_main_loop_get_context(loop));
-    g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_publisher);
-    
-    
-    
-    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
-    
+    GZmqSource *gzmq_publisher = g_zmq_source_pub_new(g_main_loop_get_context(loop));
+    if (gzmq_publisher != NULL) {
+        g_debug("[%s:%d] publischer created (%p)", __func__, __LINE__, gzmq_publisher);
 
-    static typeoutdata_t data_timeout;
-    data_timeout.gzmq_publisher = gzmq_publisher;
-    
-    g_timeout_add(1000, timeout_cb, &data_timeout);
+        if (g_easyzmq_bind(gzmq_publisher, address, NULL) == TRUE ) {
+            g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
 
-    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
-        
-    g_main_loop_run(loop);
+            static typeoutdata_t data_timeout;
+            data_timeout.gzmq_publisher = gzmq_publisher;
+            
+            g_timeout_add(1000, timeout_cb, &data_timeout);
+
+            g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+            
+            g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+                
+            g_main_loop_run(loop);
+        } else {
+            g_warning("[%s:%d] error bind", __func__, __LINE__);
+        }
+    } else {
+        g_warning("[%s:%d] error creating socket", __func__, __LINE__);
+    }
 
     g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
     
@@ -143,11 +127,7 @@ int main(int argc, char** argv) {
         g_zmq_source_close(&gzmq_publisher);
     }
     
-    if (NULL != zmq_context) {
-        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
-        zmq_ctx_term (zmq_context);
-        zmq_context = NULL;
-    }
+    easy_zmq_deinit();
     
     return (EXIT_SUCCESS);
 }

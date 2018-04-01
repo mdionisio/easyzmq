@@ -16,14 +16,42 @@
                             g_assert(_tmp_); \
                         } while (0);
 
+static void *zmq_context = NULL;
+
+void easy_zmq_init(void) {
+    if (zmq_context == NULL) {
+        zmq_context = zmq_ctx_new ();
+    }
+}
+
+void easy_zmq_deinit(void) {
+    if (zmq_context != NULL) {
+        zmq_ctx_term (zmq_context);
+        zmq_context = NULL;
+    }
+}
+
+void *get_zmq_context(void) {
+    return zmq_context;
+}
+
+/**
+ * g_easyzmq_error_quark:
+ *
+ * Gets the EasyZMQ Error Quark.
+ *
+ * Returns: a #GQuark.
+ **/
+G_DEFINE_QUARK (g-easyzmq-error-quark, g_easyzmq_error)
+
 struct _ZmqSource {
     GSource source;
     gpointer fd;
     void *zmq_owned_socket;
-    void *zmq_context;
     void *msg_receive;
     size_t size_receive;
     gint ref_count;
+    easyzmq_socket_t type;
 };
 
 #define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
@@ -216,9 +244,41 @@ void g_zmq_source_destroy(GZmqSource *self) {
     g_source_destroy((GSource *) self);
 }
 
-GZmqSource * g_zmq_source_new(void *l_zmq_context, void *l_zmq_socket, size_t max_mem_size, GMainContext *l_context) {
+gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error) {
+    g_assert(source != NULL);
+    g_assert(addr != NULL);
+    g_assert(source->zmq_owned_socket != NULL);
+    int rc = zmq_bind (source->zmq_owned_socket, addr);
+    if (rc != 0) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        g_set_error (error, G_EASYZMQ_ERROR, zerrno,
+		     "easyzmq errno: %d %s during connect",
+		     zerrno, zmq_strerror(zerrno));
+        return FALSE;
+    }
+    return TRUE;
+}
+
+gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error) {
+    g_assert(source != NULL);
+    g_assert(addr != NULL);
+    g_assert(source->zmq_owned_socket != NULL);
+    int rc = zmq_connect (source->zmq_owned_socket, addr);
+    if (rc != 0) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        g_set_error (error, G_EASYZMQ_ERROR, zerrno,
+		     "easyzmq errno: %d %s during connect",
+		     zerrno, zmq_strerror(zerrno));
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMainContext *l_context) {
     g_assert(l_zmq_socket != NULL);
-    g_assert(l_zmq_context != NULL);
+    g_assert(zmq_context != NULL);
     if (l_context == NULL) {
         l_context = g_main_context_default();
     }
@@ -231,7 +291,7 @@ GZmqSource * g_zmq_source_new(void *l_zmq_context, void *l_zmq_socket, size_t ma
     source = (GZmqSource *) g_source_new(&_g_zmq_source_funcs, sizeof (GZmqSource));
 
     source->zmq_owned_socket = l_zmq_socket;
-    source->zmq_context = l_zmq_context;
+    source->type = EASY_ZMQ_UNKNOWN;
 
     if (max_mem_size > 0) {
         {
@@ -277,6 +337,63 @@ GZmqSource * g_zmq_source_new(void *l_zmq_context, void *l_zmq_socket, size_t ma
         source = NULL;
     }
     
+    return source;
+}
+
+
+GZmqSource * g_zmq_source_req_new(size_t max_mem_size, GMainContext *context) {
+    void *zmqsocket = zmq_socket (get_zmq_context(), ZMQ_REQ);
+    if (zmqsocket == NULL) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] new req socket error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        return NULL;
+    }
+    GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
+    if (source != NULL) {
+        source->type = EASY_ZMQ_REQ;
+    }
+    return source; 
+}
+
+GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) {
+    void *zmqsocket = zmq_socket (get_zmq_context(), ZMQ_REP);
+    if (zmqsocket == NULL) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] new rep socket error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        return NULL;
+    }
+    GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
+    if (source != NULL) {
+        source->type = EASY_ZMQ_REQ;
+    }
+    return source;
+}
+
+GZmqSource * g_zmq_source_pub_new(GMainContext *context) {
+    void *zmqsocket = zmq_socket (get_zmq_context(), ZMQ_PUB);
+    if (zmqsocket == NULL) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] new pub socket error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        return NULL;
+    }
+    GZmqSource * source = g_zmq_source_new(zmqsocket, 0, context);
+    if (source != NULL) {
+        source->type = EASY_ZMQ_PUB;
+    }
+    return source;
+}
+
+GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) {
+    void *zmqsocket = zmq_socket (get_zmq_context(), ZMQ_SUB);
+    if (zmqsocket == NULL) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] new pub socket error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        return NULL;
+    }
+    GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
+    if (source != NULL) {
+        source->type = EASY_ZMQ_SUB;
+    }
     return source;
 }
 
@@ -443,10 +560,9 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const void *buf, 
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
-        g_debug("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), zmq_source, zmq_source->zmq_owned_socket);
+        g_info("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), zmq_source, zmq_source->zmq_owned_socket);
         assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
         g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-        g_debug("[%s:%d] error managed", __func__, __LINE__);
     } else {
         g_debug("[%s:%d] send req message ok [%p,%p]", __func__, __LINE__, zmq_source, zmq_source->zmq_owned_socket);
         // add timeout before call error callback
@@ -490,10 +606,9 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, void *buf, s
     int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
-        g_debug("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), zmq_source, zmq_source->zmq_owned_socket);
+        g_info("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), zmq_source, zmq_source->zmq_owned_socket);
         assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
         g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-        g_debug("[%s:%d] error managed", __func__, __LINE__);
     } else {
         g_debug("[%s:%d] send req message ok [%p,%p]", __func__, __LINE__, zmq_source, zmq_source->zmq_owned_socket);
         // add timeout before call error callback

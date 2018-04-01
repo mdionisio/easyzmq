@@ -12,7 +12,6 @@
 #include <stdlib.h>
 
 #include "easyzmq.h"
-#include <zmq.h>
 #include <glib-unix.h>
 
 #include <assert.h>
@@ -22,7 +21,6 @@
 #include <sys/time.h>
 #include <errno.h>
 
-static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
 const char default_address[] = "tcp://127.0.0.1:5555";
@@ -42,28 +40,15 @@ gboolean init_requester(gpointer user_data) {
         data_timeout.gzmq_requester = NULL;
     }
 
-    void *requester = zmq_socket (zmq_context, ZMQ_REQ);
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 2000;
-        zmq_setsockopt(requester, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
+    GZmqSource *gzmq_requester = g_zmq_source_req_new(0, g_main_loop_get_context(loop));
+    if (gzmq_requester != NULL) {
+        if (g_easyzmq_connect(gzmq_requester, address, NULL)) {
+            g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
 
-    rc = zmq_connect (requester, address);
-    if (rc != 0) {
-        g_timeout_add(2000, init_requester, NULL);
-        zmq_close(requester);
-    } else {
-    
-        GZmqSource *gzmq_requester = g_zmq_source_new(zmq_context, requester, 0, g_main_loop_get_context(loop));
-        g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
-
-        data_timeout.gzmq_requester = gzmq_requester;
+            data_timeout.gzmq_requester = gzmq_requester;
+        } else {
+            g_zmq_source_unref(gzmq_requester);
+        }
     }
 
     return G_SOURCE_REMOVE;
@@ -117,8 +102,6 @@ gboolean timeout_cb (gpointer user_data) {
         }
     }
     
-    
-    
     counter++;
     
     if (counter < 15) {
@@ -150,7 +133,7 @@ static gboolean signal_handler (gpointer user_data)
 int main(int argc, char** argv) {
     address = default_address;
     
-    zmq_context = zmq_ctx_new ();
+    easy_zmq_init();
     
     loop = g_main_loop_new(NULL, FALSE);
 
@@ -182,11 +165,7 @@ int main(int argc, char** argv) {
         data_timeout.gzmq_requester = NULL;
     }
     
-    if (NULL != zmq_context) {
-        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
-        zmq_ctx_term (zmq_context);
-        zmq_context = NULL;
-    }
+    easy_zmq_deinit();
     
     return (EXIT_SUCCESS);
 }

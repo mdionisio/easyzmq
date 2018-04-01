@@ -12,7 +12,6 @@
 #include <stdlib.h>
 
 #include "easyzmq.h"
-#include <zmq.h>
 #include <glib-unix.h>
 
 #include <assert.h>
@@ -22,7 +21,6 @@
 #include <sys/time.h>
 #include <errno.h>
 
-static void *zmq_context = NULL;
 static GMainLoop *loop = NULL;
 
 gboolean req_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
@@ -135,106 +133,42 @@ static gboolean signal_handler (gpointer user_data)
  * 
  */
 int main(int argc, char** argv) {
-    int rc __attribute__((unused));
-    zmq_context = zmq_ctx_new ();
+    gboolean rc __attribute__((unused));
+    easy_zmq_init();
     
     loop = g_main_loop_new(NULL, FALSE);
-    
-    
-    void *responder = zmq_socket (zmq_context, ZMQ_REP);
-    
-    {
-        int linger = 0;
-        zmq_setsockopt(responder, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(responder, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(responder, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-  
-    rc = zmq_bind (responder, "tcp://0.0.0.0:5555");
-    assert (rc == 0);
-    
-    GZmqSource *gzmq_respender = g_zmq_source_new(zmq_context, responder, 1024*1024, g_main_loop_get_context(loop));
+         
+    GZmqSource *gzmq_respender = g_zmq_source_rep_new(1024*1024, g_main_loop_get_context(loop));
+    assert (gzmq_respender != NULL);
     g_debug("[%s:%d] gzmq_respender created (%p)", __func__, __LINE__, gzmq_respender);
     
-    assert( recv_zmq_resp(gzmq_respender, resp_callback, NULL, NULL) == TRUE);
-    
-    void *requester = zmq_socket (zmq_context, ZMQ_REQ);
-    
-    {
-        int linger = 0;
-        zmq_setsockopt(requester, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(requester, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    zmq_connect (requester, "tcp://localhost:5555");
-    
-    GZmqSource *gzmq_requester = g_zmq_source_new(zmq_context, requester, 1024*1024, g_main_loop_get_context(loop));
+    rc = g_easyzmq_bind(gzmq_respender, "tcp://0.0.0.0:5555", NULL);
+    assert (rc == TRUE);
+
+    rc = recv_zmq_resp(gzmq_respender, resp_callback, NULL, NULL);
+    assert (rc == TRUE);
+       
+    GZmqSource *gzmq_requester = g_zmq_source_req_new(1024*1024, g_main_loop_get_context(loop));
+    assert (gzmq_requester != NULL);
     g_debug("[%s:%d] gzmq_requester created (%p)", __func__, __LINE__, gzmq_requester);
     
- 
+    rc = g_easyzmq_connect(gzmq_requester, "tcp://localhost:5555", NULL);
+    assert (rc == TRUE);
     
-    void *subscriber = zmq_socket (zmq_context, ZMQ_SUB);
-    
-    {
-        int linger = 0;
-        zmq_setsockopt(subscriber, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(subscriber, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(subscriber, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-  
-    zmq_connect (subscriber, "tcp://localhost:5556");
-    
-    GZmqSource *gzmq_subscriber = g_zmq_source_new(zmq_context, subscriber, 1024*1024, g_main_loop_get_context(loop));
+    GZmqSource *gzmq_subscriber = g_zmq_source_sub_new(1024*1024, g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_subscriber);
-    assert( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE);
-    
-    void *publisher = zmq_socket (zmq_context, ZMQ_PUB);
-    
-    {
-        int linger = 0;
-        zmq_setsockopt(publisher, ZMQ_LINGER, &linger, sizeof(linger));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(publisher, ZMQ_RCVTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-    
-    {
-        int timeoutms = 1000;
-        zmq_setsockopt(publisher, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms));
-    }
-  
-    rc = zmq_bind (publisher, "tcp://0.0.0.0:5556");
-    assert (rc == 0);
-    
-    GZmqSource *gzmq_publisher = g_zmq_source_new(zmq_context, publisher, 0, g_main_loop_get_context(loop));
+
+    rc = g_easyzmq_connect(gzmq_subscriber, "tcp://localhost:5556", NULL);
+    assert (rc == TRUE);
+
+    rc = recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL);
+    assert (rc == TRUE);
+        
+    GZmqSource *gzmq_publisher = g_zmq_source_pub_new(g_main_loop_get_context(loop));
     g_debug("[%s:%d] gzmq_subscriber created (%p)", __func__, __LINE__, gzmq_publisher);   
+
+    rc = g_easyzmq_bind(gzmq_publisher, "tcp://0.0.0.0:5556", NULL);
+    assert (rc == TRUE);
     
     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
     
@@ -277,13 +211,9 @@ int main(int argc, char** argv) {
         g_debug("[%s:%d] destroy gzmq_subscriber", __func__, __LINE__);
         g_zmq_source_close(&gzmq_subscriber);
     }
-    
-    if (NULL != zmq_context) {
-        g_debug("[%s:%d] term zmq_context", __func__, __LINE__);
-        zmq_ctx_term (zmq_context);
-        zmq_context = NULL;
-    }
-    
+
+    easy_zmq_deinit();
+        
     return (EXIT_SUCCESS);
 }
 

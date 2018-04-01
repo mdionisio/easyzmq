@@ -9,15 +9,36 @@
 #define EASYZMQ_H
 
 #include <glib.h>
-#include <zmq.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
     typedef struct _ZmqSource GZmqSource;
-    
-    GZmqSource * g_zmq_source_new(void *zmq_context, void *zmq_socket, size_t max_mem_size, GMainContext *context);
+
+    #define G_EASYZMQ_ERROR g_easyzmq_error_quark()
+
+    GQuark       g_easyzmq_error_quark      (void);
+
+	typedef enum {
+		EASY_ZMQ_PUB,
+		EASY_ZMQ_SUB,
+		EASY_ZMQ_REQ,
+		EASY_ZMQ_REP,
+        EASY_ZMQ_UNKNOWN,
+    } easyzmq_socket_t;
+
+    void easy_zmq_init(void);
+    void easy_zmq_deinit(void);
+    void *get_zmq_context(void);
+
+    GZmqSource * g_zmq_source_req_new(size_t max_mem_size, GMainContext *context);
+    GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context);
+    GZmqSource * g_zmq_source_pub_new(GMainContext *context);
+    GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context);
+
+    gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
+	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
     
     typedef gboolean (*GZmqSourceFunc) (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data);
 
@@ -32,16 +53,8 @@ extern "C" {
      */
     gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const void *buf, size_t len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
 
-    static inline gboolean send_zmq_req_easy(GZmqSource *zmq_source, guint timeoutms, const void *buf, size_t len, GZmqSourceFunc cb, gpointer user_data) {
-        return send_zmq_req(zmq_source, timeoutms, buf, len, cb, user_data, NULL);
-    }
-
     gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
-
-    static inline gboolean send_zmq_req_easy_take(GZmqSource *zmq_source, guint timeoutms, void *buf, size_t len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-        return send_zmq_req_take(zmq_source, timeoutms, buf, len, destroy_data, cb, user_data, notify);
-    }
-    
+   
     gboolean recv_zmq_sub(GZmqSource *zmq_source, const gchar* filter, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_pub(GZmqSource *zmq_source, const void *buf, size_t len);
     gboolean send_zmq_pub_take(GZmqSource *zmq_source, void *buf, size_t len, GDestroyNotify destroy_data);
