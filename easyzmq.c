@@ -20,12 +20,14 @@ static void *zmq_context = NULL;
 
 void easy_zmq_init(void) {
     if (zmq_context == NULL) {
+        g_debug("create zmq context");
         zmq_context = zmq_ctx_new ();
     }
 }
 
 void easy_zmq_deinit(void) {
     if (zmq_context != NULL) {
+        g_debug("destroy zmq context");
         zmq_ctx_term (zmq_context);
         zmq_context = NULL;
     }
@@ -36,13 +38,13 @@ void *get_zmq_context(void) {
 }
 
 /**
- * g_easyzmq_error_quark:
+ * easyzmq_error_quark:
  *
  * Gets the EasyZMQ Error Quark.
  *
  * Returns: a #GQuark.
  **/
-G_DEFINE_QUARK (g-easyzmq-error-quark, g_easyzmq_error)
+G_DEFINE_QUARK (easyzmq-error-quark, easyzmq_error)
 
 struct _ZmqSource {
     GSource source;
@@ -252,7 +254,7 @@ gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error) {
     if (rc != 0) {
         int zerrno = zmq_errno();
         g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
-        g_set_error (error, G_EASYZMQ_ERROR, zerrno,
+        g_set_error (error, EASY_ZMQ_ERROR, zerrno,
 		     "easyzmq errno: %d %s during connect",
 		     zerrno, zmq_strerror(zerrno));
         return FALSE;
@@ -268,7 +270,7 @@ gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error
     if (rc != 0) {
         int zerrno = zmq_errno();
         g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
-        g_set_error (error, G_EASYZMQ_ERROR, zerrno,
+        g_set_error (error, EASY_ZMQ_ERROR, zerrno,
 		     "easyzmq errno: %d %s during connect",
 		     zerrno, zmq_strerror(zerrno));
         return FALSE;

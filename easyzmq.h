@@ -16,9 +16,9 @@ extern "C" {
 
     typedef struct _ZmqSource GZmqSource;
 
-    #define G_EASYZMQ_ERROR g_easyzmq_error_quark()
+    #define EASY_ZMQ_ERROR easyzmq_error_quark()
 
-    GQuark       g_easyzmq_error_quark      (void);
+    GQuark       easyzmq_error_quark      (void);
 
 	typedef enum {
 		EASY_ZMQ_PUB,
