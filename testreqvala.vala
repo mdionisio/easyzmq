@@ -1,6 +1,6 @@
 MainLoop ? loop = null;
 
-bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[]) {
+bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], void* user_data) {
 	if (buf.length == 0) {
 		stdout.printf("error\n");
 	} else {
@@ -18,7 +18,7 @@ void main() {
 	try {
 		var req = new EasyZmq.ZmqSource.Req();
 		req.Connect("tcp://127.0.0.1:5555");
-		req.SendReq(20000, "pippo".data, callback);
+		req.SendReq_full(20000, "pippo".data, callback);
 		
 		loop.run();
 	} catch (EasyZmq.Error er) {
