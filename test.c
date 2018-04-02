@@ -24,7 +24,7 @@
 static GMainLoop *loop = NULL;
 
 gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
-    const gchar* data = buf;
+    const gchar* data = (const gchar*) buf;
     assert(buf != NULL);
     assert(len > 0);
     struct timeval now;
@@ -57,11 +57,11 @@ gboolean timeout_cb (gpointer user_data) {
     size_t len = strlen(datasend) + 1;
     
     if (gzmq_requester != NULL) {
-        assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
+        assert( send_zmq_req(gzmq_requester, 1000, (guint8*)datasend, len, req_callback, NULL, NULL) == TRUE);
     }
     
     if (gzmq_publisher != NULL) {
-        assert( send_zmq_pub(gzmq_publisher, datasend, len) == TRUE);
+        assert( send_zmq_pub(gzmq_publisher, (guint8*)datasend, len) == TRUE);
     }
     
     g_free(datasend);
@@ -79,7 +79,7 @@ gboolean timeout_cb (gpointer user_data) {
 }
 
 gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
-    const gchar* data = buf;
+    const gchar* data = (const gchar*)buf;
     static int counter = 0;
     assert(buf != NULL);
     assert(len > 0);
@@ -90,7 +90,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpoi
     
     gchar *datasend = g_strdup_printf("responce received: %d\n", counter);
     size_t len1 = strlen(datasend) + 1;
-    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, datasend, len1);
+    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, (guint8*)datasend, len1);
     assert( ret == TRUE );
     
     g_free(datasend);
@@ -100,7 +100,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpoi
 }
 
 gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
-    const gchar* data = buf;
+    const gchar* data = (const gchar*)buf;
     static int counter = 0;
     assert(buf != NULL);
     assert(len > 0);
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
     rc = recv_zmq_sub(gzmq_subscriber, sub_callback, NULL, NULL);
     assert (rc == TRUE);
 
-    rc = subscribe_zmq_sub(gzmq_subscriber, "", 0, NULL);
+    rc = subscribe_zmq_sub(gzmq_subscriber, (guint8*)"", 0, NULL);
     assert (rc == TRUE);
         
     GZmqSource *gzmq_publisher = g_zmq_source_pub_new(g_main_loop_get_context(loop));

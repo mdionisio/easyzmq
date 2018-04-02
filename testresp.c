@@ -41,7 +41,7 @@ gboolean timeout_cb (gpointer user_data) {
     printf("sleep.\n");
     gchar *datasend = g_strdup_printf("responce received: %d\n", counter);
     size_t len1 = strlen(datasend) + 1;
-    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, datasend, len1);
+    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, (guint8*)datasend, len1);
     assert( ret == TRUE );
     
     g_free(datasend);
@@ -51,7 +51,7 @@ gboolean timeout_cb (gpointer user_data) {
 }
 
 gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
-    const gchar* data = buf;
+    const gchar* data = (const gchar*) buf;
     assert(buf != NULL);
     assert(len > 0);
     struct timeval now;

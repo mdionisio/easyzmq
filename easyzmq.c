@@ -636,7 +636,7 @@ gboolean subscribe_zmq_sub(GZmqSource *zmq_source, const guint8 *filter, int len
     g_assert(zmq_source->type == EASY_ZMQ_SUB);
 
     if (filter == NULL) {
-        filter = "";
+        filter = (const guint8 *)"";
         len = 0;
     }
 
@@ -660,7 +660,7 @@ gboolean subscribe_zmunsubscribe_zmq_subq_sub(GZmqSource *zmq_source, const guin
     g_assert(zmq_source->type == EASY_ZMQ_SUB);
 
     if (filter == NULL) {
-        filter = "";
+        filter = (const guint8 *)"";
         len = 0;
     }
 
