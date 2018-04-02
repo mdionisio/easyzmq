@@ -50,7 +50,7 @@ gboolean timeout_cb (gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     const gchar* data = buf;
     assert(buf != NULL);
     assert(len > 0);

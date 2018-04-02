@@ -11,7 +11,8 @@ namespace EasyZmq {
         EMFILE,
         EADDRINUSE,
         EADDRNOTAVAIL,
-        ENODEV;
+        ENODEV,
+        EINTR;
 		public static GLib.Quark quark ();
 	}
 
@@ -48,11 +49,19 @@ namespace EasyZmq {
         [CCode (cname = "GZmqSourceFunc", has_target = false)]
         public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], void* user_data);
 
+        public delegate bool callback_easy(EasyZmq.ZmqSource zmq_source, uint8 buf[]);
+
         [CCode (cname = "send_zmq_req")]
-        public bool SendReq(uint timeoutms, uint8 buf[], callback cb, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+        public bool SendReq_full(uint timeoutms, uint8 buf[], callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
         
         [CCode (cname = "send_zmq_req_take")]
-        public bool SendReqTake(uint timeoutms, owned uint8 buf[], GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+        public bool SendReqTake_full(uint timeoutms, owned uint8 buf[], GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+
+        [CCode (cname = "send_zmq_req_easy")]
+        public bool SendReq(uint timeoutms, uint8 buf[], callback_easy ? cb = null);
+        
+        [CCode (cname = "send_zmq_req_take_easy")]
+        public bool SendReqTake(uint timeoutms, owned uint8 buf[], GLib.DestroyNotify ? ddestroy = null, callback_easy ? cb = null);
 
     }
 }

@@ -54,12 +54,12 @@ gboolean init_requester(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean req_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     struct timeval now;
         gettimeofday(&now, NULL);
         long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
     if ((buf != NULL) && (len > 0)) {
-        const gchar* data = buf;
+        const gchar* data = (const gchar*)buf;
         printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
     } else {
         printf("%-10ld: req socket timeout\n", msec);
@@ -97,7 +97,7 @@ gboolean timeout_cb (gpointer user_data) {
 
         //assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
         gchar *userdata = g_strdup_printf("%d\n", counter);
-        if ( send_zmq_req_take(gzmq_requester, 1000, datasend, len, destroy_data, req_callback, userdata, destroy_userdata) != TRUE) {
+        if ( send_zmq_req_take(gzmq_requester, 1000, (guint8*)datasend, len, destroy_data, req_callback, userdata, destroy_userdata) != TRUE) {
             printf("req socket send failed\n");
         }
     }

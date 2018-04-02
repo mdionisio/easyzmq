@@ -24,7 +24,7 @@
 static GMainLoop *loop = NULL;
 
 
-gboolean sub_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     static int counter = 0;
     assert(buf != NULL);
     assert(len > 0);
@@ -73,15 +73,19 @@ int main(int argc, char** argv) {
 
         if (g_easyzmq_connect(gzmq_subscriber, address, NULL) == TRUE ) {
         
-            if( recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL) == TRUE) {
+            if( recv_zmq_sub(gzmq_subscriber, sub_callback, NULL, NULL) == TRUE) {
+                if (subscribe_zmq_sub(gzmq_subscriber, (guint8*)"", 0, NULL)) {
 
-                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
-                
-                g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+                    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
                     
-                g_main_loop_run(loop);
+                    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+                        
+                    g_main_loop_run(loop);
+                } else {
+                    g_warning("[%s:%d] error subscribe filter", __func__, __LINE__);    
+                }
             } else {
-                g_warning("[%s:%d] error resp", __func__, __LINE__);
+                g_warning("[%s:%d] error sub", __func__, __LINE__);
             }
         } else {
             g_warning("[%s:%d] error bind", __func__, __LINE__);

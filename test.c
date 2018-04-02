@@ -23,7 +23,7 @@
 
 static GMainLoop *loop = NULL;
 
-gboolean req_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     const gchar* data = buf;
     assert(buf != NULL);
     assert(len > 0);
@@ -78,7 +78,7 @@ gboolean timeout_cb (gpointer user_data) {
     }
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     const gchar* data = buf;
     static int counter = 0;
     assert(buf != NULL);
@@ -99,7 +99,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpo
     return TRUE;
 }
 
-gboolean sub_callback (GZmqSource *zmq_source, const void *buf, size_t len, gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
     const gchar* data = buf;
     static int counter = 0;
     assert(buf != NULL);
@@ -161,7 +161,10 @@ int main(int argc, char** argv) {
     rc = g_easyzmq_connect(gzmq_subscriber, "tcp://localhost:5556", NULL);
     assert (rc == TRUE);
 
-    rc = recv_zmq_sub(gzmq_subscriber, "", sub_callback, NULL, NULL);
+    rc = recv_zmq_sub(gzmq_subscriber, sub_callback, NULL, NULL);
+    assert (rc == TRUE);
+
+    rc = subscribe_zmq_sub(gzmq_subscriber, "", 0, NULL);
     assert (rc == TRUE);
         
     GZmqSource *gzmq_publisher = g_zmq_source_pub_new(g_main_loop_get_context(loop));

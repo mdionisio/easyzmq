@@ -44,7 +44,7 @@ gboolean timeout_cb (gpointer user_data) {
     size_t len = strlen(datasend) + 1;
     
     if (gzmq_publisher != NULL) {
-        send_zmq_pub(gzmq_publisher, datasend, len);
+        send_zmq_pub(gzmq_publisher, (guint8*)datasend, len);
     }
     
     g_free(datasend);
