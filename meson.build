@@ -1,6 +1,7 @@
 project('easyzmq', 'c', 'vala')
 zmqdep = dependency('libzmq')
 glibdep = dependency('glib-2.0')
+giodep = dependency('gio-2.0')
 
 inc = include_directories('.')
 
@@ -9,9 +10,9 @@ add_project_arguments(['--vapidir', meson.current_source_dir()],
 
 
 easyzmq = library('easyzmq', 
-	['easyzmq.c'], 
+	['easyzmq.c', 'easyzmqasync.c'], 
 	include_directories : inc,
-	dependencies : [zmqdep, glibdep])
+	dependencies : [zmqdep, glibdep, giodep])
 
 executable('testzmq', 
 	['test.c'], 
@@ -47,4 +48,10 @@ executable('testzmqreqvala',
 	['testreqvala.vala', 'easyzmq.vapi'], 
 	include_directories : inc,
 	dependencies : [glibdep],
+	link_with : [easyzmq])
+
+executable('testzmqreqasyncvala', 
+	['testreqasyncvala.vala', 'easyzmq.vapi'], 
+	include_directories : inc,
+	dependencies : [glibdep, giodep],
 	link_with : [easyzmq])
