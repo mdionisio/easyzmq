@@ -33,10 +33,10 @@ extern "C" {
     void easy_zmq_deinit(void);
     void *get_zmq_context(void);
 
-    GZmqSource * g_zmq_source_req_new(size_t max_mem_size, GMainContext *context);
-    GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context);
-    GZmqSource * g_zmq_source_pub_new(GMainContext *context);
-    GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context);
+    GZmqSource * g_zmq_source_req_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+    GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+    GZmqSource * g_zmq_source_pub_new(GMainContext *context) G_GNUC_MALLOC;
+    GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
     gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
 	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
