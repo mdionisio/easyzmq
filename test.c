@@ -23,9 +23,10 @@
 
 static GMainLoop *loop = NULL;
 
-gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
     const gchar* data = (const gchar*) buf;
     assert(buf != NULL);
+    assert(zmq_source != NULL);
     assert(len > 0);
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -78,9 +79,10 @@ gboolean timeout_cb (gpointer user_data) {
     }
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
     const gchar* data = (const gchar*)buf;
     static int counter = 0;
+    assert(zmq_source != NULL);
     assert(buf != NULL);
     assert(len > 0);
     struct timeval now;
@@ -99,9 +101,10 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpoi
     return TRUE;
 }
 
-gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
     const gchar* data = (const gchar*)buf;
     static int counter = 0;
+    assert(zmq_source != NULL);
     assert(buf != NULL);
     assert(len > 0);
     struct timeval now;
@@ -132,7 +135,7 @@ static gboolean signal_handler (gpointer user_data)
 /*
  * 
  */
-int main(int argc, char** argv) {
+int main(G_GNUC_UNUSED int argc, G_GNUC_UNUSED char** argv) {
     gboolean rc __attribute__((unused));
     easy_zmq_init();
     

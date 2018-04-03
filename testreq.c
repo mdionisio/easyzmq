@@ -32,7 +32,7 @@ typedef struct timeout_data {
 
 static typeoutdata_t data_timeout = { NULL };
 
-gboolean init_requester(gpointer user_data) {
+gboolean init_requester(G_GNUC_UNUSED gpointer user_data) {
     int rc __attribute__((unused));
 
     if (data_timeout.gzmq_requester != NULL) {
@@ -54,10 +54,11 @@ gboolean init_requester(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
+    assert(zmq_source != NULL);
     struct timeval now;
-        gettimeofday(&now, NULL);
-        long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    gettimeofday(&now, NULL);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
     if ((buf != NULL) && (len > 0)) {
         const gchar* data = (const gchar*)buf;
         printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
@@ -82,7 +83,7 @@ void destroy_data (gpointer data) {
     g_free(data);
 }
 
-gboolean timeout_cb (gpointer user_data) {
+gboolean timeout_cb (G_GNUC_UNUSED gpointer user_data) {
     GZmqSource *gzmq_requester = data_timeout.gzmq_requester;
     
     static int counter = 0;
