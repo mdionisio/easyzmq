@@ -82,6 +82,8 @@ int main(int argc, char** argv) {
                     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
                         
                     g_main_loop_run(loop);
+
+                    recv_zmq_sub(gzmq_subscriber, NULL, NULL, NULL);
                 } else {
                     g_warning("[%s:%d] error subscribe filter", __func__, __LINE__);    
                 }

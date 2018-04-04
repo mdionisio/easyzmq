@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
                 g_debug("[%s:%d] start mainloop", __func__, __LINE__);
                     
                 g_main_loop_run(loop);
+
+                recv_zmq_resp(gzmq_responder, NULL, NULL, NULL);
             } else {
                 g_warning("[%s:%d] error resp", __func__, __LINE__);
             }
