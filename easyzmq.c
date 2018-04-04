@@ -56,7 +56,8 @@ G_DEFINE_QUARK (easyzmq-error-quark, easyzmq_error)
 
 struct _ZmqSource {
     GSource source;
-    gpointer fd;
+    gpointer fdtag;
+    int fd;
     void *zmq_owned_socket;
     void *msg_receive;
     size_t size_receive;
@@ -66,8 +67,10 @@ struct _ZmqSource {
 
 #define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
 
-static gboolean
-_g_zmq_source_prepare(GSource *source, gint *timeout) {
+static void _pollfdOn(GZmqSource *source);
+static void _pollfdOff(GZmqSource *source);
+
+static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
     //g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)source);
 
     GZmqSource *self = (GZmqSource *) source;
@@ -86,8 +89,7 @@ _g_zmq_source_prepare(GSource *source, gint *timeout) {
     }
 }
 
-static gboolean
-_g_zmq_source_check(GSource *source) {
+static gboolean _g_zmq_source_check(GSource *source) {
     GZmqSource *self = (GZmqSource *) source;
     //g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)source);
 
@@ -104,8 +106,7 @@ _g_zmq_source_check(GSource *source) {
     }
 }
 
-static gboolean
-_g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data) {
+static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data) {
     GZmqSource *self = (GZmqSource *) source;
     GZmqSourceFunc zcallback = (GZmqSourceFunc) callback;
 
@@ -163,6 +164,7 @@ _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data
                             ret = G_SOURCE_REMOVE;
                         }
                     }
+                    g_debug("destroying received data: %p", self);
                     assert_errno(zmq_msg_close(&msg) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
                     return ret;
 
@@ -188,15 +190,12 @@ _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data
     return G_SOURCE_CONTINUE;
 }
 
-static void
-_g_zmq_source_finalize(GSource *source) {
-    GZmqSource *self = (GZmqSource *) source;
+static void _g_zmq_source_finalize(GSource *source) {
+    GZmqSource * const self = (GZmqSource *) source;
 
     g_debug("[%s:%d] (%p) GZmqSource finalize", __func__, __LINE__, (void*)source);
-    if (self->fd != NULL) {
-        g_source_remove_unix_fd((GSource*) self, self->fd);
-        self->fd = NULL;
-    }
+    _pollfdOff(self);
+    self->fd = -1;
 
     if (NULL != self->msg_receive) {
         g_free(self->msg_receive);
@@ -287,6 +286,28 @@ gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error
     return TRUE;
 }
 
+static void _pollfdOn(GZmqSource *source) {
+    g_assert(source != NULL);
+    g_assert(source->fd > 0);
+    g_assert(source->fdtag == NULL);
+
+    source->fdtag = g_source_add_unix_fd((GSource *) source, source->fd, G_IO_IN | G_IO_PRI | G_IO_ERR | G_IO_HUP | G_IO_NVAL);
+
+    g_debug("[%s:%d] %p %p", __func__, __LINE__, (void*)source, (void*)source->fdtag);
+
+    g_assert(source->fdtag != NULL);
+}
+
+static void _pollfdOff(GZmqSource *source) {
+    g_assert(source != NULL);
+
+    if (source->fdtag != NULL) {
+        g_debug("[%s:%d] %p %p", __func__, __LINE__, (void*)source, (void*)source->fdtag);
+        g_source_remove_unix_fd((GSource*) source, source->fdtag);
+        source->fdtag = NULL;
+    }
+}
+
 static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMainContext *l_context) {
     g_assert(l_zmq_socket != NULL);
     g_assert(zmq_context != NULL);
@@ -317,19 +338,18 @@ static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GM
         source->msg_receive = NULL;
         source->size_receive = 0;
     }
-    source->fd = NULL;
+    source->fdtag = NULL;
+    source->fd = -1;
     source->ref_count = 1;
 
-    int fd = 0;
+    int fd = -1;
     size_t fd_len = sizeof (fd);
     if (zmq_getsockopt(source->zmq_owned_socket, ZMQ_FD, &fd, &fd_len) == 0) {
 
         g_debug("[%s:%d] GZmqSource zmq fd: %d", __func__, __LINE__, fd);
+        source->fd = fd;
 
-        if (G_UNLIKELY(fd != 0)) {
-            source->fd = g_source_add_unix_fd((GSource *) source, fd, G_IO_IN | G_IO_PRI | G_IO_ERR | G_IO_HUP | G_IO_NVAL);
-
-            g_debug("[%s:%d] g_source_add_unix_fd: %p", __func__, __LINE__, (void*)source->fd);
+        if (G_UNLIKELY(source->fd > 0)) {            
             g_source_set_callback((GSource *) source, (GSourceFunc) fake_callback, NULL, NULL);
             g_debug("[%s:%d] g_source_set_callback", __func__, __LINE__);
             g_source_attach((GSource *) source, l_context);
@@ -376,6 +396,7 @@ GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) {
     GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
     if (source != NULL) {
         source->type = EASY_ZMQ_REQ;
+        _pollfdOn(source);
     }
     return source;
 }
@@ -404,6 +425,7 @@ GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) {
     GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
     if (source != NULL) {
         source->type = EASY_ZMQ_SUB;
+        _pollfdOn(source);
     }
     return source;
 }
@@ -507,11 +529,18 @@ static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
             g_source_remove(pdata->timeout_handler);
             pdata->timeout_handler = 0U;
         }
+        _pollfdOff(zmq_source);
+        g_zmq_source_ref(zmq_source);
         pdata->timeoutms = 0U;
-        if (G_LIKELY(pdata->callback != NULL)) {
-            pdata->callback(zmq_source, buf, len, pdata->user_data);
-        }
+        GZmqSourceFunc callback = pdata->callback;
+        void * const user_data2 = pdata->user_data;
+        GZmqSource * const zmq_source = pdata->zmq_source;
+        g_debug("[%s:%d] change callback", __func__, __LINE__);
         g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+        if (G_LIKELY(callback != NULL)) {
+            callback(zmq_source, buf, len, user_data2);
+        }
+        g_zmq_source_unref(zmq_source);
     }
     return G_SOURCE_CONTINUE;
 }
@@ -528,6 +557,8 @@ gboolean req_timeout_callback(gpointer user_data) {
     pdata->notify = NULL;
     pdata->user_data = NULL;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)zmq_source);
+    _pollfdOff(zmq_source);
+    g_zmq_source_ref(zmq_source);
     g_debug("[%s:%d] change callback", __func__, __LINE__);
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL); // this call means destroy user_data
     if (G_LIKELY(callback != NULL)) {
@@ -536,10 +567,12 @@ gboolean req_timeout_callback(gpointer user_data) {
         g_debug("[%s:%d] call callback", __func__, __LINE__);
         callback(zmq_source, NULL, 0, user_data2);
     }
+    g_zmq_source_unref(zmq_source);
     if (G_LIKELY((notify2 != NULL) && (user_data2 != NULL))) {
         g_debug("[%s:%d] free user data", __func__, __LINE__);
         notify2(user_data2);
     }
+
 
     return G_SOURCE_REMOVE;
 }
@@ -566,8 +599,14 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf
 
     if (timeoutms > 0U) {
         int timeoutms = timeoutms;
-        assert_errno(_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) == 0, "error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            return FALSE;
+        }
     }
+
+    _pollfdOn(zmq_source);
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
@@ -615,7 +654,11 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
 
     if (timeoutms > 0U) {
         int timeoutms = timeoutms;
-        assert_errno(_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) == 0, "error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            return FALSE;
+        }
     }
 
     zmq_msg_t message;
