@@ -26,6 +26,12 @@ executable('testzmqpub',
 	dependencies : [glibdep],
 	link_with : [easyzmq])
 
+executable('testzmqpubmon', 
+	['testpubmon.c'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+
 executable('testzmqsub', 
 	['testsub.c'], 
 	include_directories : inc,

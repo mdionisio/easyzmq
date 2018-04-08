@@ -40,10 +40,12 @@ extern "C" {
     GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
+    GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source) G_GNUC_MALLOC;
+
     gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
 	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
     
-    typedef gboolean (*GZmqSourceFunc) (GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data);
+    typedef gboolean (*GZmqSourceFunc) (GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data);
 
     /** Send message on zmq req socket
      * zmq_source: self
@@ -59,7 +61,7 @@ extern "C" {
 
     void send_zmq_req_async (GZmqSource* req, guint timeoutms, const guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
     void send_zmq_req_take_async (GZmqSource* req, guint timeoutms, guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
-    void send_zmq_req_finish (GZmqSource* req, GAsyncResult* _res_, const guint8** bufout, int* bufout_length);
+    void send_zmq_req_finish (GZmqSource* req, GAsyncResult* _res_, const guint8** bufout, int* bufout_length, gboolean *more);
 
     static inline gboolean send_zmq_req_easy(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data) {
         return send_zmq_req(zmq_source, timeoutms, buf, len, cb, user_data, NULL);

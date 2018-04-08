@@ -47,7 +47,7 @@ namespace EasyZmq {
         public bool Connect (string addr) throws EasyZmq.Error;
 
         [CCode (cname = "GZmqSourceFunc", has_target = false)]
-        public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, void* user_data);
+        public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data);
 
         public delegate bool callback_easy(EasyZmq.ZmqSource zmq_source, uint8[] buf);
 
@@ -64,10 +64,10 @@ namespace EasyZmq {
         public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback_easy ? cb = null);
 
         [CCode (cname = "send_zmq_req_async", finish_function = "send_zmq_req_finish")]
-        public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout);
+        public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
 
         [CCode (cname = "send_zmq_req_take_async", finish_function = "send_zmq_req_finish")]
-        public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout);
+        public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout, out bool more);
 
     }
 }

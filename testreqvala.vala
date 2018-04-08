@@ -1,11 +1,11 @@
 MainLoop ? loop = null;
 
-bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], void* user_data) {
+bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], bool more, void* user_data) {
 	if (buf.length == 0) {
 		stdout.printf("error\n");
 	} else {
 		//unowned string pippo = (string)buf;
-		stdout.printf("recv: %d\n", buf.length);
+		stdout.printf("recv: %d more: %d\n", buf.length, (int)more);
 	}
 	loop.quit();
 	return true;

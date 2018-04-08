@@ -25,7 +25,7 @@ static GMainLoop *loop = NULL;
 
 const char default_address[] = "tcp://127.0.0.1:7555";
 
-gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
+gboolean pair_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     const gchar* data = (const gchar*) buf;
     assert(zmq_source != NULL);
     assert(buf != NULL);
@@ -33,7 +33,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GN
     struct timeval now;
     gettimeofday(&now, NULL);
     long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
-    printf("%-10ld: resp socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
+    printf("%-10ld: pair socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
     
     return TRUE;
 }
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
 
         if (g_easyzmq_connect(gzmq_responder, address, NULL) == TRUE ) {
         
-            if( recv_zmq_pair(gzmq_responder, resp_callback, NULL, NULL) == TRUE) {
+            if( recv_zmq_pair(gzmq_responder, pair_callback, NULL, NULL) == TRUE) {
 
                 g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
                 

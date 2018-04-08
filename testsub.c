@@ -24,7 +24,7 @@
 static GMainLoop *loop = NULL;
 
 
-gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
+gboolean sub_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     static int counter = 0;
     assert(buf != NULL);
     assert(zmq_source != NULL);

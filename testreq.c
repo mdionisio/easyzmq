@@ -54,7 +54,7 @@ gboolean init_requester(G_GNUC_UNUSED gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
+gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     assert(zmq_source != NULL);
     struct timeval now;
     gettimeofday(&now, NULL);

@@ -24,6 +24,11 @@ static int _zmq_setsockopt (void *socket, int option_name, const void *option_va
     return retval;
 }
 
+static guint64 get_unique(void) {
+    static guint64 counter = 0;
+    return counter++;
+}
+
 static void *zmq_context = NULL;
 
 void easy_zmq_init(void) {
@@ -63,6 +68,7 @@ struct _ZmqSource {
     size_t size_receive;
     gint ref_count;
     easyzmq_socket_t type;
+    GZmqSource *zmq_source_monitor;
 };
 
 #define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
@@ -116,75 +122,86 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
         return G_SOURCE_REMOVE;
     }
 
-    int zevents = 0;
-    size_t zevents_len = sizeof (zevents);
-    assert_errno(zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+    for(;;) {
+        int zevents = 0;
+        size_t zevents_len = sizeof (zevents);
+        assert_errno(zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
-    //g_debug("[%s:%d] event %d on file %p", __func__, __LINE__, zevents, (void*)self->fd);
+        //g_debug("[%s:%d] event %d on file %p", __func__, __LINE__, zevents, (void*)self->fd);
 
-    if (zevents & ZMQ_POLLIN) {
-        //g_debug("[%s:%d] ZMQ_POLLIN", __func__, __LINE__);
-        
-            if (self->msg_receive != NULL) {
-                int rc = zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
-                if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
-                    g_info("[%s:%d] error receiving zmq message (%d,%zu): %s (%d)", __func__, __LINE__, rc, self->size_receive, clean_errno(), zmq_errno());
-                    return zcallback(self, NULL, 0, user_data);
-                }
-                if (G_LIKELY(zcallback != NULL)) {
-                    //g_debug("[%s:%d] received zmq message", __func__, __LINE__);
-                    gboolean ret = zcallback(self,
-                            self->msg_receive,
-                            rc,
-                            user_data);
-                    return ret;
-                } else {
-                    g_debug("[%s:%d] receive message when there is no subscription on it", __func__, __LINE__);
-
-                    return G_SOURCE_REMOVE;
-                }
-            } else {
-                zmq_msg_t msg;
-                if (zmq_msg_init (&msg) == 0) {
-                    ssize_t size = zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
-                    gboolean ret = FALSE;
-                    if (size < 0) {
-                        g_info("[%s:%d] error receiving zmq message: %s (%d)", __func__, __LINE__, clean_errno(), zmq_errno());
-                        ret = zcallback(self, NULL, 0, user_data);
-                    } else {
-                        //g_debug("[%s:%d] received zmq message", __func__, __LINE__);
-                        if (G_LIKELY(zcallback != NULL)) {
-                            ret = zcallback(self,
-                                            zmq_msg_data(&msg),
-                                            zmq_msg_size(&msg),
-                                            user_data);
-                        } else {
-                            g_debug("[%s:%d] receive message when there is no subscription on it", __func__, __LINE__);
-
-                            ret = G_SOURCE_REMOVE;
-                        }
+        if (zevents & ZMQ_POLLIN) {
+            //g_debug("[%s:%d] ZMQ_POLLIN", __func__, __LINE__);
+            
+                if (self->msg_receive != NULL) {
+                    int rc = zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                    if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
+                        g_info("[%s:%d] error receiving zmq message (%d,%zu): %s (%d)", __func__, __LINE__, rc, self->size_receive, clean_errno(), zmq_errno());
+                        return zcallback(self, NULL, 0, FALSE, user_data);
                     }
-                    g_debug("destroying received data: %p", self);
-                    assert_errno(zmq_msg_close(&msg) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
-                    return ret;
 
+                    if (G_LIKELY(zcallback != NULL)) {
+                        int more = 0;
+                        size_t more_len = sizeof(more);
+                        assert_errno(zmq_getsockopt (self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+
+                        //g_debug("[%s:%d] received zmq message", __func__, __LINE__);
+                        gboolean ret = zcallback(self,
+                                self->msg_receive,
+                                rc,
+                                (more != 0) ? TRUE : FALSE,
+                                user_data);
+                        return ret;
+                    } else {
+                        g_debug("[%s:%d] receive message when there is no subscription on it", __func__, __LINE__);
+
+                        return G_SOURCE_REMOVE;
+                    }
                 } else {
-                    g_debug("[%s:%d] no memory to receive any message", __func__, __LINE__);
-                    return G_SOURCE_REMOVE;
+                    zmq_msg_t msg;
+                    if (zmq_msg_init (&msg) == 0) {
+                        ssize_t size = zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                        gboolean ret = FALSE;
+                        if (size < 0) {
+                            g_info("[%s:%d] error receiving zmq message: %s (%d)", __func__, __LINE__, clean_errno(), zmq_errno());
+                            ret = zcallback(self, NULL, 0, FALSE, user_data);
+                        } else {
+                            //g_debug("[%s:%d] received zmq message", __func__, __LINE__);
+                            if (G_LIKELY(zcallback != NULL)) {
+                                ret = zcallback(self,
+                                                zmq_msg_data(&msg),
+                                                zmq_msg_size(&msg),
+                                                zmq_msg_more(&msg),
+                                                user_data);
+                            } else {
+                                g_debug("[%s:%d] receive message when there is no subscription on it", __func__, __LINE__);
+
+                                ret = G_SOURCE_REMOVE;
+                            }
+                        }
+                        g_debug("destroying received data: %p", self);
+                        assert_errno(zmq_msg_close(&msg) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
+                        return ret;
+
+                    } else {
+                        g_debug("[%s:%d] no memory to receive any message", __func__, __LINE__);
+                        return G_SOURCE_REMOVE;
+                    }
                 }
+        } else if (zevents & ZMQ_POLLOUT) {
+            g_debug("[%s:%d] ZMQ FD no other event maneged yet ZMQ_POLLOUT", __func__, __LINE__);
+            break;
+        } else if (zevents & ZMQ_POLLERR) {
+            g_debug("[%s:%d] error", __func__, __LINE__);
+            if (G_LIKELY(zcallback != NULL)) {
+                return zcallback(self, NULL, 0, FALSE, user_data);
+            } else {
+                g_debug("[%s:%d] receive error when there is no subscription on it", __func__, __LINE__);
+                return G_SOURCE_REMOVE;
             }
-    } else if (zevents & ZMQ_POLLOUT) {
-        g_debug("[%s:%d] ZMQ FD no other event maneged yet ZMQ_POLLOUT", __func__, __LINE__);
-    } else if (zevents & ZMQ_POLLERR) {
-        g_debug("[%s:%d] error", __func__, __LINE__);
-        if (G_LIKELY(zcallback != NULL)) {
-            return zcallback(self, NULL, 0, user_data);
         } else {
-            g_debug("[%s:%d] receive error when there is no subscription on it", __func__, __LINE__);
-            return G_SOURCE_REMOVE;
+            g_debug("[%s:%d] no event", __func__, __LINE__);
+            break;
         }
-    } else {
-        g_debug("[%s:%d] no event", __func__, __LINE__);
     }
 
     return G_SOURCE_CONTINUE;
@@ -200,6 +217,11 @@ static void _g_zmq_source_finalize(GSource *source) {
     if (NULL != self->msg_receive) {
         g_free(self->msg_receive);
         self->msg_receive = NULL;
+    }
+
+    if (self->zmq_source_monitor != NULL) {
+        g_zmq_source_unref(self->zmq_source_monitor);
+        self->zmq_source_monitor = NULL;
     }
 
     if (self->zmq_owned_socket != NULL) {
@@ -219,7 +241,7 @@ static GSourceFuncs _g_zmq_source_funcs = {
     .finalize = _g_zmq_source_finalize
 };
 
-static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED const guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gpointer user_data) {
+static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED const guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     g_debug("[%s:%d]", __func__, __LINE__);
     g_assert_not_reached();
     return G_SOURCE_CONTINUE;
@@ -339,6 +361,7 @@ static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GM
         source->size_receive = 0;
     }
     source->fdtag = NULL;
+    source->zmq_source_monitor = NULL;
     source->fd = -1;
     source->ref_count = 1;
 
@@ -395,7 +418,7 @@ GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) {
     }
     GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
     if (source != NULL) {
-        source->type = EASY_ZMQ_REQ;
+        source->type = EASY_ZMQ_REP;
         _pollfdOn(source);
     }
     return source;
@@ -535,7 +558,7 @@ static void req_callback_data_free(gpointer data) {
     }
 }
 
-static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gpointer user_data) {
+static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
     g_assert(user_data != NULL);
     req_callback_data_t * const pdata = user_data;
     g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)zmq_source);
@@ -555,7 +578,7 @@ static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
         g_debug("[%s:%d] change callback", __func__, __LINE__);
         g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
         if (G_LIKELY(callback != NULL)) {
-            callback(zmq_source, buf, len, user_data2);
+            callback(zmq_source, buf, len, more, user_data2);
         }
         g_zmq_source_unref(zmq_source);
     }
@@ -582,7 +605,7 @@ gboolean req_timeout_callback(gpointer user_data) {
         // so all the used parameter is saved before
         // use it
         g_debug("[%s:%d] call callback", __func__, __LINE__);
-        callback(zmq_source, NULL, 0, user_data2);
+        callback(zmq_source, NULL, 0, FALSE, user_data2);
     }
     g_zmq_source_unref(zmq_source);
     if (G_LIKELY((notify2 != NULL) && (user_data2 != NULL))) {
@@ -873,5 +896,36 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
     } else {
         g_debug("[%s:%d] send resp message ok [%p,%p]", __func__, __LINE__, (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
         return TRUE;
+    }
+}
+
+// Monitor
+GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    if (zmq_source->zmq_source_monitor == NULL) {
+        guint64 unique = get_unique();
+        gchar *address = g_strdup_printf("inproc://%" G_GUINT64_FORMAT, unique);
+        g_assert(address != NULL);
+
+        if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ALL) == 0) {
+            zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context ((GSource *) zmq_source));
+            g_assert(zmq_source->zmq_owned_socket != NULL);
+
+            if (!g_easyzmq_connect (zmq_source->zmq_source_monitor, address, NULL)) {
+                g_zmq_source_unref(zmq_source->zmq_source_monitor);
+                zmq_source->zmq_source_monitor = NULL;
+            } else {
+                g_zmq_source_ref(zmq_source->zmq_source_monitor);
+            }
+        } else {
+            g_warning("error creating monitor socket: %s", clean_errno());
+        }
+        g_free(address); address = NULL;
+
+        return zmq_source->zmq_source_monitor;
+    } else {
+        g_zmq_source_ref(zmq_source->zmq_source_monitor);
+        return zmq_source->zmq_source_monitor;
     }
 }

@@ -8,16 +8,17 @@ async void mainasync() {
 		req2.Connect("tcp://127.0.0.1:5556");
 
 		unowned uint8[] bufout = null;
+		bool more = false;
 
-		yield req1.SendReq_async(10000, "pippo req1".data, out bufout);
+		yield req1.SendReq_async(10000, "pippo req1".data, out bufout, out more);
 
-		stdout.printf("req1: %d\n", bufout.length);
+		stdout.printf("req1: %d more: %d\n", bufout.length, (int)more);
 
 		bufout = null;
 
-		yield req2.SendReq_async(10000, "pippo req2".data, out bufout);
+		yield req2.SendReq_async(10000, "pippo req2".data, out bufout, out more);
 
-		stdout.printf("req2: %d\n", bufout.length);
+		stdout.printf("req2: %d more: %d\n", bufout.length, (int)more);
 	} catch (EasyZmq.Error er) {
 		stdout.printf("error connect\n");
 	}

@@ -38,7 +38,7 @@ gboolean timeout_cb (gpointer user_data) {
     
     GZmqSource *zmq_source = (GZmqSource *)user_data;
 
-    printf("sleep.\n");
+    printf("answer.\n");
     gchar *datasend = g_strdup_printf("responce received: %d\n", counter);
     size_t len1 = strlen(datasend) + 1;
     gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, (guint8*)datasend, len1);
@@ -50,7 +50,7 @@ gboolean timeout_cb (gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gpointer user_data) {
+gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     const gchar* data = (const gchar*) buf;
     assert(zmq_source != NULL);
     assert(buf != NULL);
@@ -64,6 +64,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GN
         printf("sleep...\n");
         g_timeout_add(2000, timeout_cb, zmq_source);        
     } else {
+        printf("immediate\n");
         timeout_cb(zmq_source);
     }
     
