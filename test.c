@@ -92,7 +92,7 @@ gboolean resp_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GN
     
     gchar *datasend = g_strdup_printf("responce received: %d\n", counter);
     size_t len1 = strlen(datasend) + 1;
-    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, (guint8*)datasend, len1);
+    gboolean ret __attribute__((unused)) = send_zmq_rep(zmq_source, (guint8*)datasend, len1);
     assert( ret == TRUE );
     
     g_free(datasend);
@@ -148,7 +148,7 @@ int main(G_GNUC_UNUSED int argc, G_GNUC_UNUSED char** argv) {
     rc = g_easyzmq_bind(gzmq_respender, "tcp://0.0.0.0:5555", NULL);
     assert (rc == TRUE);
 
-    rc = recv_zmq_resp(gzmq_respender, resp_callback, NULL, NULL);
+    rc = recv_zmq_rep(gzmq_respender, resp_callback, NULL, NULL);
     assert (rc == TRUE);
        
     GZmqSource *gzmq_requester = g_zmq_source_req_new(1024*1024, g_main_loop_get_context(loop));

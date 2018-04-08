@@ -83,6 +83,21 @@ gboolean pair_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GN
     assert(len > 0);
     
     printf("mon socket receive (%p) len:%u more:%d \n", (void*)zmq_source, (unsigned int) len, (int)more);
+    if (more) {
+        guint32 value;
+        easyzmq_socket_t event;
+        if (get_easyzmq_monitor_event(buf, len, &event, &value)) {
+            printf("mon socket receive (%p) event:%u value:%u\n", (void*)zmq_source, (unsigned int)event, (unsigned int) value);
+            g_easyzmq_set_userdata(zmq_source, GUINT_TO_POINTER( (int) event ), NULL);
+        } else {
+            printf("errore\n");
+        }
+    } else {
+        easyzmq_socket_t event = (easyzmq_socket_t) GPOINTER_TO_UINT(g_easyzmq_get_userdata(zmq_source));
+        g_easyzmq_set_userdata(zmq_source, GUINT_TO_POINTER( 0 ), NULL);
+        const char* address = (char*) buf;
+        printf("-------------> %u -- %.*s (%d)\n", (unsigned int) event, len, address, len);
+    }
     
     return TRUE;
 }
@@ -122,6 +137,7 @@ int main(int argc, char** argv) {
                     g_debug("[%s:%d] start mainloop", __func__, __LINE__);
                         
                     g_main_loop_run(loop);
+                    
                 } else {
                     g_warning("[%s:%d] error bind", __func__, __LINE__);
                 }
@@ -131,22 +147,29 @@ int main(int argc, char** argv) {
         } else {
             g_warning("[%s:%d] error monitor pair", __func__, __LINE__);
         }
+
+        if (gzmq_publisher_mon != NULL) {
+            g_debug("[%s:%d] destroy gzmq_publisher_mon", __func__, __LINE__);
+            g_zmq_source_close(&gzmq_publisher_mon);
+        }
     } else {
         g_warning("[%s:%d] error creating socket", __func__, __LINE__);
     }
 
     g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
-    
+
+    if (gzmq_publisher != NULL) {
+        g_debug("[%s:%d] destroy gzmq_publisher", __func__, __LINE__);
+        g_zmq_source_close(&gzmq_publisher);
+    }
+
     if (loop != NULL) {
         g_debug("[%s:%d] unref mainloop", __func__, __LINE__);
         g_main_loop_unref(loop);
         loop = NULL;
     }
     
-    if (gzmq_publisher != NULL) {
-        g_debug("[%s:%d] destroy gzmq_publisher", __func__, __LINE__);
-        g_zmq_source_close(&gzmq_publisher);
-    }
+    
     
     easy_zmq_deinit();
     

@@ -41,7 +41,7 @@ gboolean timeout_cb (gpointer user_data) {
     printf("answer.\n");
     gchar *datasend = g_strdup_printf("responce received: %d\n", counter);
     size_t len1 = strlen(datasend) + 1;
-    gboolean ret __attribute__((unused)) = send_zmq_resp(zmq_source, (guint8*)datasend, len1);
+    gboolean ret __attribute__((unused)) = send_zmq_rep(zmq_source, (guint8*)datasend, len1);
     assert( ret == TRUE );
     
     g_free(datasend);
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
 
         if (g_easyzmq_bind(gzmq_responder, address, NULL) == TRUE ) {
         
-            if( recv_zmq_resp(gzmq_responder, resp_callback, NULL, NULL) == TRUE) {
+            if( recv_zmq_rep(gzmq_responder, resp_callback, NULL, NULL) == TRUE) {
 
                 g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
                 
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
                     
                 g_main_loop_run(loop);
 
-                recv_zmq_resp(gzmq_responder, NULL, NULL, NULL);
+                recv_zmq_rep(gzmq_responder, NULL, NULL, NULL);
             } else {
                 g_warning("[%s:%d] error resp", __func__, __LINE__);
             }
