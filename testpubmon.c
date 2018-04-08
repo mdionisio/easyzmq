@@ -76,30 +76,13 @@ static gboolean signal_handler (gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
-gboolean pair_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
-    //const gchar* data = (const gchar*) buf;
+
+void monitor_callback (GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len) {
     assert(zmq_source != NULL);
-    assert(buf != NULL);
+    assert(address != NULL);
     assert(len > 0);
-    
-    printf("mon socket receive (%p) len:%u more:%d \n", (void*)zmq_source, (unsigned int) len, (int)more);
-    if (more) {
-        guint32 value;
-        easyzmq_socket_t event;
-        if (get_easyzmq_monitor_event(buf, len, &event, &value)) {
-            printf("mon socket receive (%p) event:%u value:%u\n", (void*)zmq_source, (unsigned int)event, (unsigned int) value);
-            g_easyzmq_set_userdata(zmq_source, GUINT_TO_POINTER( (int) event ), NULL);
-        } else {
-            printf("errore\n");
-        }
-    } else {
-        easyzmq_socket_t event = (easyzmq_socket_t) GPOINTER_TO_UINT(g_easyzmq_get_userdata(zmq_source));
-        g_easyzmq_set_userdata(zmq_source, GUINT_TO_POINTER( 0 ), NULL);
-        const char* address = (char*) buf;
-        printf("-------------> %u -- %.*s (%d)\n", (unsigned int) event, len, address, len);
-    }
-    
-    return TRUE;
+
+    printf("-------------> %u - %u - %.*s (%d)\n", (unsigned int) event, (unsigned int) value, len, (const char *)address, len);
 }
 
 /*
@@ -120,30 +103,27 @@ int main(int argc, char** argv) {
     if (gzmq_publisher != NULL) {
         g_debug("[%s:%d] publischer created (%p)", __func__, __LINE__, gzmq_publisher);
 
-        GZmqSource *gzmq_publisher_mon = get_zmq_socket_monitor(gzmq_publisher);
+        GZmqSource *gzmq_publisher_mon = get_zmq_socket_monitor(gzmq_publisher, monitor_callback);
         if (gzmq_publisher_mon != NULL) {
-            if( recv_zmq_pair(gzmq_publisher_mon, pair_callback, NULL, NULL) == TRUE) {
 
-                if (g_easyzmq_bind(gzmq_publisher, address, NULL) == TRUE ) {
-                    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+            if (g_easyzmq_bind(gzmq_publisher, address, NULL) == TRUE ) {
+                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
 
-                    static typeoutdata_t data_timeout;
-                    data_timeout.gzmq_publisher = gzmq_publisher;
-                    
-                    g_timeout_add(1000, timeout_cb, &data_timeout);
+                static typeoutdata_t data_timeout;
+                data_timeout.gzmq_publisher = gzmq_publisher;
+                
+                g_timeout_add(1000, timeout_cb, &data_timeout);
 
-                    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+                
+                g_debug("[%s:%d] start mainloop", __func__, __LINE__);
                     
-                    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
-                        
-                    g_main_loop_run(loop);
-                    
-                } else {
-                    g_warning("[%s:%d] error bind", __func__, __LINE__);
-                }
+                g_main_loop_run(loop);
+                
             } else {
-                g_warning("[%s:%d] error receiv pair", __func__, __LINE__);
+                g_warning("[%s:%d] error bind", __func__, __LINE__);
             }
+
         } else {
             g_warning("[%s:%d] error monitor pair", __func__, __LINE__);
         }

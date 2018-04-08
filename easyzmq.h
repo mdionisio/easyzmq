@@ -55,15 +55,15 @@ extern "C" {
     GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
-    GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source) G_GNUC_MALLOC;
+    typedef void (*GZmqMonitorFunc) (GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len);
+    GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cp) G_GNUC_MALLOC;
+    
 
     gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
 	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
 
     gpointer g_easyzmq_get_userdata(GZmqSource *self);
     gboolean g_easyzmq_set_userdata(GZmqSource *self, gpointer userdata, GDestroyNotify destroy);
-
-    gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_socket_t *event, guint32 *value);
     
     typedef gboolean (*GZmqSourceFunc) (GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data);
 

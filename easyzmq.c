@@ -982,37 +982,24 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
 }
 
 // Monitor
-GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source) {
-    g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    if (zmq_source->zmq_source_monitor == NULL) {
-        guint64 unique = get_unique();
-        gchar *address = g_strdup_printf("inproc://%" G_GUINT64_FORMAT, unique);
-        g_assert(address != NULL);
 
-        if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ALL) == 0) {
-            zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context ((GSource *) zmq_source));
-            g_assert(zmq_source->zmq_owned_socket != NULL);
+typedef struct monitor_callback_data {
+    int state;
+    guint32 value;
+    easyzmq_socket_t event;
+    GZmqMonitorFunc callback;
+} monitor_callback_data_t;
 
-            if (!g_easyzmq_connect (zmq_source->zmq_source_monitor, address, NULL)) {
-                g_zmq_source_unref(zmq_source->zmq_source_monitor);
-                zmq_source->zmq_source_monitor = NULL;
-            } else {
-                g_zmq_source_ref(zmq_source->zmq_source_monitor);
-            }
-        } else {
-            g_warning("error creating monitor socket: %s", clean_errno());
-        }
-        g_free(address); address = NULL;
-
-        return zmq_source->zmq_source_monitor;
+static void monitor_callback_data_free(gpointer data) {
+    if (data != NULL) {
+        g_debug("[%s:%d] free all (%p)", __func__, __LINE__, (void*)data);
+        g_slice_free (monitor_callback_data_t, data);
     } else {
-        g_zmq_source_ref(zmq_source->zmq_source_monitor);
-        return zmq_source->zmq_source_monitor;
+        g_warning("[%s:%d] no data to free", __func__, __LINE__);
     }
 }
 
-gboolean get_easyzmq_monitor_event(const guint8 *buf, int len , easyzmq_socket_t *event, guint32 *value) {
+static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len , easyzmq_socket_t *event, guint32 *value) {
     // The first frame contains an event number (16 bits), and an event value (32 bits) that provides additional data according to the event number. 
     if (len == 6) {
         struct {
@@ -1055,5 +1042,71 @@ gboolean get_easyzmq_monitor_event(const guint8 *buf, int len , easyzmq_socket_t
         return TRUE;
     } else {
         return FALSE;
+    }
+}
+
+static gboolean monitor_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+    g_assert(zmq_source != NULL);
+    g_assert(user_data != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+
+    monitor_callback_data_t *pdata = (monitor_callback_data_t *) user_data;
+    
+    if (more) {
+        g_assert(pdata->state == 0);
+        if (get_easyzmq_monitor_event(buf, len, &(pdata->event), &(pdata->value))) {
+            pdata->state = 1;
+        } else {
+            g_error("size error");
+        }
+    } else {
+        g_assert(pdata->state == 1);        
+        if (pdata->callback) {
+            pdata->callback(zmq_source, pdata->event, pdata->value, buf, len);
+        }
+        pdata->state = 0;
+    }
+    
+    return TRUE;
+}
+
+
+GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    if (zmq_source->zmq_source_monitor == NULL) {
+        guint64 unique = get_unique();
+        gchar *address = g_strdup_printf("inproc://%" G_GUINT64_FORMAT, unique);
+        g_assert(address != NULL);
+
+        if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ALL) == 0) {
+            zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context ((GSource *) zmq_source));
+            g_assert(zmq_source->zmq_owned_socket != NULL);
+
+            monitor_callback_data_t * const pdata = g_slice_new0(monitor_callback_data_t);
+            g_assert(pdata != NULL);
+            pdata->state = 0;
+            pdata->callback = cb;
+
+            recv_zmq_pair(zmq_source->zmq_source_monitor, monitor_callback, pdata, monitor_callback_data_free);
+
+            if (!g_easyzmq_connect (zmq_source->zmq_source_monitor, address, NULL)) {
+                g_zmq_source_unref(zmq_source->zmq_source_monitor);
+                zmq_source->zmq_source_monitor = NULL;
+            } else {
+                g_zmq_source_ref(zmq_source->zmq_source_monitor);
+            }
+            
+        } else {
+            g_warning("error creating monitor socket: %s", clean_errno());
+        }
+        g_free(address); address = NULL;
+
+        return zmq_source->zmq_source_monitor;
+    } else {
+        g_assert(cb == NULL);
+        g_zmq_source_ref(zmq_source->zmq_source_monitor);
+        return zmq_source->zmq_source_monitor;
     }
 }
