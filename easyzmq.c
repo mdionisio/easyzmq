@@ -219,7 +219,7 @@ static GSourceFuncs _g_zmq_source_funcs = {
     .finalize = _g_zmq_source_finalize
 };
 
-static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gpointer user_data) {
+static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED const guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gpointer user_data) {
     g_debug("[%s:%d]", __func__, __LINE__);
     g_assert_not_reached();
     return G_SOURCE_CONTINUE;
@@ -430,6 +430,21 @@ GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) {
     return source;
 }
 
+GZmqSource * g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) {
+    void *zmqsocket = zmq_socket (get_zmq_context(), ZMQ_PAIR);
+    if (zmqsocket == NULL) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] new pair socket error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        return NULL;
+    }
+    GZmqSource * source = g_zmq_source_new(zmqsocket, max_mem_size, context);
+    if (source != NULL) {
+        source->type = EASY_ZMQ_PAIR;
+        _pollfdOn(source);
+    }
+    return source;
+}
+
 //
 
 static void my_zmq_free_fn(void *data, void *hint) {
@@ -454,6 +469,7 @@ gboolean send_zmq_resp(GZmqSource *zmq_source, const guint8 *buf, int len) {
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(buf != NULL);
     g_assert(len > 0);
+    g_assert(zmq_source->type == EASY_ZMQ_REP);
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
@@ -475,6 +491,7 @@ gboolean send_zmq_resp_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(buf != NULL);
     g_assert(len > 0);
+    g_assert(zmq_source->type == EASY_ZMQ_REP);
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
@@ -741,6 +758,9 @@ gboolean recv_zmq_sub(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_d
     g_assert(zmq_source->type == EASY_ZMQ_SUB);
 
     g_debug("[%s:%d] register for subscriber receiving", __func__, __LINE__);
+    if (cb == NULL) {
+        cb = fake_callback;
+    }
 
     g_source_set_callback((GSource *) zmq_source, (GSourceFunc) cb, user_data, notify);
 
@@ -797,4 +817,61 @@ gboolean send_zmq_pub_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestro
     }
 
     return ret;
+}
+
+// PAIR SOCKET
+
+gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->type == EASY_ZMQ_PAIR);
+    g_debug("[%s:%d] register for pair receiving [%p]", __func__, __LINE__, (void*)zmq_source);
+    if (cb == NULL) {
+        cb = fake_callback;
+    }
+    g_source_set_callback((GSource *) zmq_source, (GSourceFunc) cb, user_data, notify);
+
+    return TRUE;
+}
+
+gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+    g_assert(zmq_source->type == EASY_ZMQ_PAIR);
+
+    zmq_msg_t message;
+    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
+    memcpy(zmq_msg_data(&message), buf, len);
+    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+
+    if (G_UNLIKELY(r == -1)) {
+        g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
+        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
+        return FALSE;
+    } else {
+        g_debug("[%s:%d] send resp message ok [%p,%p]", __func__, __LINE__, (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
+        return TRUE;
+    }
+}
+
+gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+
+    zmq_msg_t message;
+    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
+    memcpy(zmq_msg_data(&message), buf, len);
+    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+
+    if (G_UNLIKELY(r == -1)) {
+        g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
+        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
+        return FALSE;
+    } else {
+        g_debug("[%s:%d] send resp message ok [%p,%p]", __func__, __LINE__, (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
+        return TRUE;
+    }
 }

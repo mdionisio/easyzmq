@@ -43,6 +43,18 @@ executable('testzmqreq',
 	include_directories : inc,
 	dependencies : [glibdep],
 	link_with : [easyzmq])
+
+executable('testzmqpair1', 
+	['testpair1.c'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+
+executable('testzmqpair2', 
+	['testpair2.c'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
 	
 executable('testzmqreqvala', 
 	['testreqvala.vala', 'easyzmq.vapi'], 

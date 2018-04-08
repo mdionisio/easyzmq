@@ -26,6 +26,7 @@ extern "C" {
 		EASY_ZMQ_SUB,
 		EASY_ZMQ_REQ,
 		EASY_ZMQ_REP,
+        EASY_ZMQ_PAIR,
         EASY_ZMQ_UNKNOWN,
     } easyzmq_socket_t;
 
@@ -37,6 +38,7 @@ extern "C" {
     GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_pub_new(GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+    GZmqSource * g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
     gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
 	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
@@ -77,6 +79,10 @@ extern "C" {
     gboolean recv_zmq_resp(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_resp(GZmqSource *zmq_source, const guint8 *buf, int len);
     gboolean send_zmq_resp_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
+
+    gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
+    gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len);
+    gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
     
     void g_zmq_source_destroy(GZmqSource *self);
 
