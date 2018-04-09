@@ -274,13 +274,14 @@ static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSE
     return G_SOURCE_CONTINUE;
 }
 
-void g_zmq_source_ref(GZmqSource *self) {
-    g_return_if_fail(self != NULL);
+GZmqSource * g_zmq_source_ref(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, NULL);
     g_warn_if_fail(self->ref_count != 0);
 
     self->ref_count ++;
 
     g_source_ref((GSource *) self);
+    return self;
 }
 
 void g_zmq_source_unref(GZmqSource *self) {

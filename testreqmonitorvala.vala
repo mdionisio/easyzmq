@@ -7,11 +7,16 @@ bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_d
 		stdout.printf("recv: %.*s more: %d\n", buf.length, (string)buf, (int)more);
 	}
 
-	try {
-		zmq_source.Disconnect("tcp://127.0.0.1:5555");
-	} catch (EasyZmq.Error er) {
-		stdout.printf("error disconnect: %s\n", er.message);
-	}	
+	GLib.Timeout.add_seconds(2, () => { 
+		stdout.printf("disconnecting...\n");
+		try {
+			bool retval = zmq_source.Disconnect("tcp://127.0.0.1:5555");
+			stdout.printf("disconnecting: %d\n", (int)retval);
+		} catch (EasyZmq.Error er) {
+			stdout.printf("error disconnect: %s\n", er.message);
+		}
+		return false; 
+	});
 
 	GLib.Timeout.add_seconds(5, () => { 
 		stdout.printf("closing...\n");

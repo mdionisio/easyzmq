@@ -112,7 +112,7 @@ extern "C" {
 
     static inline void g_zmq_source_close(GZmqSource **self) { if (self != NULL) { g_zmq_source_destroy(*self); *self = NULL;} }
     
-    void g_zmq_source_ref(GZmqSource *self);
+    GZmqSource * g_zmq_source_ref(GZmqSource *self);
     
     void g_zmq_source_unref(GZmqSource *self);
 
