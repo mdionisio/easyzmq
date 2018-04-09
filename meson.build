@@ -85,4 +85,9 @@ executable('testzmqrepvala',
 	include_directories : inc,
 	dependencies : [glibdep],
 	link_with : [easyzmq])
-	
+
+executable('testzmqsubvala', 
+	['testsubvala.vala', 'easyzmq.vapi'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
