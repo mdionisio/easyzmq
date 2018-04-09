@@ -1,10 +1,10 @@
 MainLoop ? loop = null;
 
-bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], bool more, void* user_data) {
-	stdout.printf("recv: %d more: %d\n", buf.length, (int)more);
+bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data) {
+	stdout.printf("recv: %.*s more: %d\n", buf.length, (string)buf, (int)more);
 
 	zmq_source.SendRep("pippo".data);
-	
+
 	return true;
 }
 

@@ -1,10 +1,10 @@
 MainLoop ? loop = null;
 
-bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], bool more, void* user_data) {
+bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data) {
 	if (buf.length == 0) {
 		stdout.printf("error\n");
 	} else {
-		stdout.printf("recv: %d more: %d\n", buf.length, (int)more);
+		stdout.printf("recv: %.*s more: %d\n", buf.length, (string)buf, (int)more);
 	}
 
 	GLib.Timeout.add_seconds(5, () => { 
