@@ -79,3 +79,10 @@ executable('testzmqreqasyncvala',
 	include_directories : inc,
 	dependencies : [glibdep, giodep],
 	link_with : [easyzmq])
+
+executable('testzmqrepvala', 
+	['testrepvala.vala', 'easyzmq.vapi'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+	

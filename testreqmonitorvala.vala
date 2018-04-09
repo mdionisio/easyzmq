@@ -28,7 +28,7 @@ void main() {
 		var req = new EasyZmq.ZmqSource.Req();
 		var monitor = req.Monitor(monitor_callback);
 		req.Connect("tcp://127.0.0.1:5555");
-		req.SendReq_full(20000, "pippo".data, callback);
+		req.SendReq(20000, "pippo".data, callback);
 		
 		loop.run();
 		stdout.printf("closed\n");

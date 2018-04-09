@@ -74,21 +74,13 @@ namespace EasyZmq {
         [CCode (cname = "GZmqSourceFunc", has_target = false)]
         public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data);
 
-        public delegate bool callback_easy(EasyZmq.ZmqSource zmq_source, uint8[] buf);
-
         // Request
 
         [CCode (cname = "send_zmq_req")]
-        public bool SendReq_full(uint timeoutms, uint8[] buf, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+        public bool SendReq(uint timeoutms, uint8[] buf, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
         
         [CCode (cname = "send_zmq_req_take")]
-        public bool SendReqTake_full(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
-
-        [CCode (cname = "send_zmq_req_easy")]
-        public bool SendReq(uint timeoutms, uint8[] buf, callback_easy ? cb = null);
-        
-        [CCode (cname = "send_zmq_req_take_easy")]
-        public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback_easy ? cb = null);
+        public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
 
         [CCode (cname = "send_zmq_req_async", finish_function = "send_zmq_req_finish")]
         public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
@@ -98,9 +90,33 @@ namespace EasyZmq {
 
         // Replay
 
+        [CCode (cname = "recv_zmq_rep")]
+        public bool RecvRep(callback cb, void* user_data = null, GLib.DestroyNotify ? unotify = null);
+
+        [CCode (cname = "send_zmq_rep")]
+        public bool SendRep(uint8[] buf);
+        
+        [CCode (cname = "send_zmq_rep_take")]
+        public bool SendRepTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null);
+
         // Publisher
 
+        [CCode (cname = "send_zmq_pub")]
+        public bool SendPub(uint8[] buf);
+        
+        [CCode (cname = "send_zmq_pub_take")]
+        public bool SendPubTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null);
+
         // Subscriber
+
+        [CCode (cname = "recv_zmq_sub")]
+        public bool RecvSub(callback cb, void* user_data = null, GLib.DestroyNotify ? unotify = null);
+
+        [CCode (cname = "subscribe_zmq_sub")]
+        public bool SubscribeSub(uint8[] filter) throws EasyZmq.Error;
+
+        [CCode (cname = "unsubscribe_zmq_sub")]
+        public bool UnsubscribeSub(uint8[] filter) throws EasyZmq.Error;
 
         // Pair
 
