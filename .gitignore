@@ -1,1 +1,5 @@
 builddir
+.vscode
+*.so
+*.o
+*.a
