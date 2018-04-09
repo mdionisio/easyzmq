@@ -7,6 +7,12 @@ bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_d
 		stdout.printf("recv: %.*s more: %d\n", buf.length, (string)buf, (int)more);
 	}
 
+	try {
+		zmq_source.Disconnect("tcp://127.0.0.1:5555");
+	} catch (EasyZmq.Error er) {
+		stdout.printf("error disconnect: %s\n", er.message);
+	}	
+
 	GLib.Timeout.add_seconds(5, () => { 
 		stdout.printf("closing...\n");
 		loop.quit(); 
@@ -26,7 +32,7 @@ void main() {
 
 	try {
 		var req = new EasyZmq.ZmqSource.Req();
-		var monitor = req.Monitor(monitor_callback);
+		req.Monitor(monitor_callback);
 		req.Connect("tcp://127.0.0.1:5555");
 		req.SendReq(20000, "pippo".data, callback);
 		
