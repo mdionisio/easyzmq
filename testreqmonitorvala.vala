@@ -7,7 +7,11 @@ bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], bool more, void* user_d
 		stdout.printf("recv: %d more: %d\n", buf.length, (int)more);
 	}
 
-	GLib.Timeout.add_seconds(5, () => { loop.quit(); return false; });
+	GLib.Timeout.add_seconds(5, () => { 
+		stdout.printf("closing...\n");
+		loop.quit(); 
+		return false; 
+	});
 	
 	return true;
 }
@@ -27,9 +31,12 @@ void main() {
 		req.SendReq_full(20000, "pippo".data, callback);
 		
 		loop.run();
+		stdout.printf("closed\n");
 	} catch (EasyZmq.Error er) {
 		stdout.printf("error connect\n");
 	}
+	loop = null;
+	stdout.printf("all destroy\n");
 	
 	EasyZmq.Deinit();
 }
