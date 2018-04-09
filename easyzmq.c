@@ -310,14 +310,31 @@ gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error) {
     int rc = zmq_bind (source->zmq_owned_socket, addr);
     if (rc != 0) {
         int zerrno = zmq_errno();
-        g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        g_info("[%s:%d] bind error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
         g_set_error (error, EASY_ZMQ_ERROR, zerrno,
-		     "easyzmq errno: %d %s during connect",
+		     "easyzmq errno: %d %s during bind",
 		     zerrno, zmq_strerror(zerrno));
         return FALSE;
     }
     return TRUE;
 }
+
+gboolean g_easyzmq_unbind (GZmqSource *source, const char *addr, GError **error) {
+    g_assert(source != NULL);
+    g_assert(addr != NULL);
+    g_assert(source->zmq_owned_socket != NULL);
+    int rc = zmq_unbind (source->zmq_owned_socket, addr);
+    if (rc != 0) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] unbind error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        g_set_error (error, EASY_ZMQ_ERROR, zerrno,
+		     "easyzmq errno: %d %s during unbind",
+		     zerrno, zmq_strerror(zerrno));
+        return FALSE;
+    }
+    return TRUE;
+}
+
 
 gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error) {
     g_assert(source != NULL);
@@ -329,6 +346,22 @@ gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error
         g_info("[%s:%d] connect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
         g_set_error (error, EASY_ZMQ_ERROR, zerrno,
 		     "easyzmq errno: %d %s during connect",
+		     zerrno, zmq_strerror(zerrno));
+        return FALSE;
+    }
+    return TRUE;
+}
+
+gboolean g_easyzmq_disconnect (GZmqSource *source, const char *addr, GError **error) {
+    g_assert(source != NULL);
+    g_assert(addr != NULL);
+    g_assert(source->zmq_owned_socket != NULL);
+    int rc = zmq_disconnect (source->zmq_owned_socket, addr);
+    if (rc != 0) {
+        int zerrno = zmq_errno();
+        g_info("[%s:%d] disconnect error: %d %s", __func__, __LINE__, zerrno, zerrno == 0 ? "None" : zmq_strerror(zerrno));
+        g_set_error (error, EASY_ZMQ_ERROR, zerrno,
+		     "easyzmq errno: %d %s during disconnect",
 		     zerrno, zmq_strerror(zerrno));
         return FALSE;
     }

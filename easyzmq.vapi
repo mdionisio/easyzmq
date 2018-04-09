@@ -68,8 +68,14 @@ namespace EasyZmq {
         [CCode (cname = "g_easyzmq_bind")]
         public bool Bind (string addr) throws EasyZmq.Error;
 
+        [CCode (cname = "g_easyzmq_unbind")]
+        public bool Unbind (string addr) throws EasyZmq.Error;
+
         [CCode (cname = "g_easyzmq_connect")]
         public bool Connect (string addr) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_disconnect")]
+        public bool Disconnect (string addr) throws EasyZmq.Error;
 
         [CCode (cname = "GZmqSourceFunc", has_target = false)]
         public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data);

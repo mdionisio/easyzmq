@@ -60,7 +60,9 @@ extern "C" {
     
 
     gboolean g_easyzmq_bind (GZmqSource *source, const char *addr, GError **error);
+    gboolean g_easyzmq_unbind (GZmqSource *source, const char *addr, GError **error);
 	gboolean g_easyzmq_connect (GZmqSource *source, const char *addr, GError **error);
+    gboolean g_easyzmq_disconnect (GZmqSource *source, const char *addr, GError **error);
 
     gpointer g_easyzmq_get_userdata(GZmqSource *self);
     gboolean g_easyzmq_set_userdata(GZmqSource *self, gpointer userdata, GDestroyNotify destroy);
