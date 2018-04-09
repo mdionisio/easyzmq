@@ -180,7 +180,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                                 ret = G_SOURCE_REMOVE;
                             }
                         }
-                        g_debug("destroying received data: %p", self);
+                        //g_debug("destroying received data: %p", self);
                         assert_errno(zmq_msg_close(&msg) == 0, "error %s[%d] on zmq_msg_close", clean_errno(), zmq_errno());
                         return ret;
 
@@ -992,7 +992,6 @@ typedef struct monitor_callback_data {
 
 static void monitor_callback_data_free(gpointer data) {
     if (data != NULL) {
-        g_debug("[%s:%d] free all (%p)", __func__, __LINE__, (void*)data);
         g_slice_free (monitor_callback_data_t, data);
     } else {
         g_warning("[%s:%d] no data to free", __func__, __LINE__);
@@ -1036,7 +1035,6 @@ static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len , easyzmq_s
             } else {
                 *event = EASYZMQ_EVENT_UNKNOWN;
             }
-            //*event = decoded_buffer.event;
         }
 
         return TRUE;
@@ -1061,16 +1059,23 @@ static gboolean monitor_callback (GZmqSource *zmq_source, const guint8 *buf, int
             g_error("size error");
         }
     } else {
-        g_assert(pdata->state == 1);        
-        if (pdata->callback) {
+        g_assert(pdata->state == 1);
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wenum-compare"
+        if ((pdata->callback) && 
+            (pdata->event != EASYZMQ_EVENT_CONNECT_DELAYED) &&
+            (pdata->event != EASYZMQ_EVENT_CONNECT_RETRIED) &&
+            (pdata->event != EASYZMQ_EVENT_CLOSED)) {
             pdata->callback(zmq_source, pdata->event, pdata->value, buf, len);
         }
+        #pragma GCC diagnostic pop
         pdata->state = 0;
     }
     
     return TRUE;
 }
 
+#define ZMQ_EVENT_ATTACHED (ZMQ_EVENT_ALL)
 
 GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) {
     g_assert(zmq_source != NULL);
@@ -1080,7 +1085,7 @@ GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) 
         gchar *address = g_strdup_printf("inproc://%" G_GUINT64_FORMAT, unique);
         g_assert(address != NULL);
 
-        if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ALL) == 0) {
+        if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ATTACHED) == 0) {
             zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context ((GSource *) zmq_source));
             g_assert(zmq_source->zmq_owned_socket != NULL);
 
