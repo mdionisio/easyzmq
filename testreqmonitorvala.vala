@@ -1,0 +1,35 @@
+MainLoop ? loop = null;
+
+bool callback(EasyZmq.ZmqSource zmq_source, uint8 buf[], bool more, void* user_data) {
+	if (buf.length == 0) {
+		stdout.printf("error\n");
+	} else {
+		stdout.printf("recv: %d more: %d\n", buf.length, (int)more);
+	}
+
+	GLib.Timeout.add_seconds(5, () => { loop.quit(); return false; });
+	
+	return true;
+}
+
+void monitor_callback(EasyZmq.ZmqSource zmq_source, EasyZmq.monitor_event event, uint32 value, uint8[] buf) {
+	stdout.printf("event: %u value: %u address: %.*s\n", (uint) event, (uint) value, buf.length, (string)buf);
+}
+
+void main() {
+	loop = new MainLoop();
+	EasyZmq.Init();
+
+	try {
+		var req = new EasyZmq.ZmqSource.Req();
+		var monitor = req.Monitor(monitor_callback);
+		req.Connect("tcp://127.0.0.1:5555");
+		req.SendReq_full(20000, "pippo".data, callback);
+		
+		loop.run();
+	} catch (EasyZmq.Error er) {
+		stdout.printf("error connect\n");
+	}
+	
+	EasyZmq.Deinit();
+}

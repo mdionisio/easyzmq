@@ -16,6 +16,22 @@ namespace EasyZmq {
 		public static GLib.Quark quark ();
 	}
 
+    [CCode (cname = "easyzmq_monitor_event_t", cprefix = "EASYZMQ_EVENT_", has_type_id = false)]
+    public enum monitor_event {
+        UNKNOWN,
+		CONNECTED,
+        CONNECT_DELAYED,
+        CONNECT_RETRIED,
+        LISTENING,
+        BIND_FAILED,
+        ACCEPTED,
+        ACCEPT_FAILED,
+        CLOSED,
+        CLOSE_FAILED,
+        DISCONNECTED,
+        MONITOR_STOPPED;
+    }
+
     [CCode (cname = "easy_zmq_init")]
     public void Init();
 
@@ -40,6 +56,15 @@ namespace EasyZmq {
         [CCode (cname = "g_zmq_source_sub_new")]
         public ZmqSource.Sub (size_t max_size = 0, GLib.MainContext ? gcontext = null);
 
+        [CCode (cname = "g_zmq_source_pair_new")]
+        public ZmqSource.Pair (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "GZmqMonitorFunc", has_target = false)]
+        public delegate void monitor_callback (EasyZmq.ZmqSource zmq_source, EasyZmq.monitor_event event, uint32 value, uint8[] address);
+
+        [CCode (cname = "get_zmq_socket_monitor")]
+        public EasyZmq.ZmqSource Monitor (monitor_callback ? cb = null);
+
         [CCode (cname = "g_easyzmq_bind")]
         public bool Bind (string addr) throws EasyZmq.Error;
 
@@ -50,6 +75,8 @@ namespace EasyZmq {
         public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data);
 
         public delegate bool callback_easy(EasyZmq.ZmqSource zmq_source, uint8[] buf);
+
+        // Request
 
         [CCode (cname = "send_zmq_req")]
         public bool SendReq_full(uint timeoutms, uint8[] buf, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
@@ -68,6 +95,14 @@ namespace EasyZmq {
 
         [CCode (cname = "send_zmq_req_take_async", finish_function = "send_zmq_req_finish")]
         public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout, out bool more);
+
+        // Replay
+
+        // Publisher
+
+        // Subscriber
+
+        // Pair
 
     }
 }

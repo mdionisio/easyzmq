@@ -68,6 +68,12 @@ executable('testzmqreqvala',
 	dependencies : [glibdep],
 	link_with : [easyzmq])
 
+executable('testzmqreqmonitorvala', 
+	['testreqmonitorvala.vala', 'easyzmq.vapi'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+
 executable('testzmqreqasyncvala', 
 	['testreqasyncvala.vala', 'easyzmq.vapi'], 
 	include_directories : inc,
