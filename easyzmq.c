@@ -74,6 +74,7 @@ struct _ZmqSource {
 };
 
 #define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
+//#define ZMQ_SEND_FLAGS 0
 
 static void _pollfdOn(GZmqSource *source);
 static void _pollfdOff(GZmqSource *source);
@@ -269,8 +270,8 @@ static GSourceFuncs _g_zmq_source_funcs = {
 };
 
 static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED const guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
-    g_debug("[%s:%d]", __func__, __LINE__);
-    g_assert_not_reached();
+    g_warning("[%s:%d] probably data received out of order", __func__, __LINE__);
+    //g_assert_not_reached();
     return G_SOURCE_CONTINUE;
 }
 
@@ -760,6 +761,37 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf
             g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
             return FALSE;
         }
+        int req_correlate = 1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+        int req_relaxed = 1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+    } else {
+        int timeoutms = -1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            return FALSE;
+        }
+        int req_correlate = 0;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+        int req_relaxed = 0;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
     }
 
     _pollfdOn(zmq_source);
@@ -814,6 +846,37 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
             g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
             g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
             return FALSE;
+        }
+        int req_correlate = 1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+        int req_relaxed = 1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+    } else {
+        int timeoutms = -1;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            return FALSE;
+        }
+        int req_correlate = 0;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
+        }
+        int req_relaxed = 0;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
+            g_info("(%p) error %s[%d] on zmq_setsockopt", (void*)zmq_source, clean_errno(), zmq_errno());
+            //g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
+            //return FALSE;
         }
     }
 

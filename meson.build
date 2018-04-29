@@ -50,6 +50,12 @@ executable('testzmqreq',
 	dependencies : [glibdep],
 	link_with : [easyzmq])
 
+executable('testzmqreqtimeout', 
+	['testreqtimeout.c'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+
 executable('testzmqpair1', 
 	['testpair1.c'], 
 	include_directories : inc,
