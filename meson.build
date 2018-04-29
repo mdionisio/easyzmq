@@ -44,6 +44,12 @@ executable('testzmqresp',
 	dependencies : [glibdep],
 	link_with : [easyzmq])
 
+executable('testzmqrouterresp', 
+	['testrouter.c'], 
+	include_directories : inc,
+	dependencies : [glibdep],
+	link_with : [easyzmq])
+
 executable('testzmqreq', 
 	['testreq.c'], 
 	include_directories : inc,

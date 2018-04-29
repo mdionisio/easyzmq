@@ -27,6 +27,7 @@ extern "C" {
 		EASY_ZMQ_REQ,
 		EASY_ZMQ_REP,
         EASY_ZMQ_PAIR,
+        EASY_ZMQ_ROUTER,
         EASY_ZMQ_UNKNOWN,
     } easyzmq_socket_t;
 
@@ -51,6 +52,7 @@ extern "C" {
 
     GZmqSource * g_zmq_source_req_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+    GZmqSource * g_zmq_source_router_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_pub_new(GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
     GZmqSource * g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
@@ -68,6 +70,7 @@ extern "C" {
     gboolean g_easyzmq_set_userdata(GZmqSource *self, gpointer userdata, GDestroyNotify destroy);
     
     typedef gboolean (*GZmqSourceFunc) (GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data);
+    typedef gboolean (*GZmqSourceIdentityFunc) (GZmqSource *zmq_source, void *identity, const guint8 *buf, int len, gboolean more, gpointer user_data);
 
     /** Send message on zmq req socket
      * zmq_source: self
@@ -103,6 +106,11 @@ extern "C" {
     gboolean recv_zmq_rep(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_rep(GZmqSource *zmq_source, const guint8 *buf, int len);
     gboolean send_zmq_rep_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
+
+    gboolean recv_zmq_router(GZmqSource *zmq_source, GZmqSourceIdentityFunc cb, gpointer user_data, GDestroyNotify notify);
+    gboolean send_zmq_router(GZmqSource *zmq_source, void *identity, const guint8 *buf, int len);
+    gboolean send_zmq_router_take(GZmqSource *zmq_source, void *identity, guint8 *buf, int len, GDestroyNotify destroy_data);
+    void destroy_identity(void *identity);
 
     gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
     gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len);
