@@ -17,6 +17,7 @@
                         } while (0);
 
 static int _zmq_setsockopt (void *socket, int option_name, const void *option_value, size_t option_len) {
+    g_assert(socket != NULL);
     int retval = 0;
     do {
         retval = zmq_setsockopt (socket, option_name, option_value, option_len);
@@ -80,6 +81,7 @@ static void _pollfdOn(GZmqSource *source);
 static void _pollfdOff(GZmqSource *source);
 
 static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
+    g_assert(source != NULL);
     //g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)source);
 
     GZmqSource *self = (GZmqSource *) source;
@@ -99,6 +101,7 @@ static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
 }
 
 static gboolean _g_zmq_source_check(GSource *source) {
+    g_assert(source != NULL);
     GZmqSource *self = (GZmqSource *) source;
     //g_debug("[%s:%d] (%p)", __func__, __LINE__, (void*)source);
 
@@ -116,6 +119,7 @@ static gboolean _g_zmq_source_check(GSource *source) {
 }
 
 static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data) {
+    g_assert(source != NULL);
     GZmqSource *self = (GZmqSource *) source;
     GZmqSourceFunc zcallback = (GZmqSourceFunc) callback;
 
@@ -211,6 +215,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
 }
 
 static void _g_easyzmq_destroy_userdata(GZmqSource *self) {
+    g_assert(self != NULL);
     if (self->user_data != NULL) { 
         if (self->destroy_user_data != NULL) {
             self->destroy_user_data(self->user_data);
@@ -220,6 +225,7 @@ static void _g_easyzmq_destroy_userdata(GZmqSource *self) {
 }
 
 static void _g_zmq_source_finalize(GSource *source) {
+    g_assert(source != NULL);
     GZmqSource * const self = (GZmqSource *) source;
 
     g_debug("[%s:%d] (%p) GZmqSource finalize", __func__, __LINE__, (void*)source);
@@ -270,6 +276,7 @@ static GSourceFuncs _g_zmq_source_funcs = {
 };
 
 static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSED const guint8 *buf, G_GNUC_UNUSED int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+    g_assert(zmq_source != NULL);
     g_warning("[%s:%d] probably data received out of order", __func__, __LINE__);
     //g_assert_not_reached();
     return G_SOURCE_CONTINUE;
