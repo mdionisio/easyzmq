@@ -6,6 +6,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#if __STDC_VERSION__ >= 201112L
+#define HAVE_ATOMIC
+#include <stdatomic.h>
+#else
+#undef HAVE_ATOMIC
+#endif
+
 #define clean_errno() (zmq_errno() == 0 ? "None" : zmq_strerror(zmq_errno()))
 
 #define assert_errno(x, message, ...) do { \
@@ -26,8 +33,13 @@ static int _zmq_setsockopt (void *socket, int option_name, const void *option_va
 }
 
 static guint64 get_unique(void) {
-    static guint64 counter = 0;
+#ifdef HAVE_ATOMIC
+    static atomic_uint_fast64_t counter = 0U;
+    return (guint64)atomic_fetch_add(&counter, 1);
+#else
+    static guint64 counter = 0U;
     return counter++;
+#endif
 }
 
 static void *zmq_context = NULL;
