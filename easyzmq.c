@@ -58,6 +58,8 @@ void easy_zmq_init(void) {
     if (zmq_context == NULL) {
         g_debug("create zmq context");
         zmq_context = zmq_ctx_new ();
+    } else {
+        g_warning("easy_zmq_init already initilized");
     }
 }
 
@@ -66,6 +68,8 @@ void easy_zmq_deinit(void) {
         g_debug("destroy zmq context");
         zmq_ctx_term (zmq_context);
         zmq_context = NULL;
+    } else {
+        g_warning("easy_zmq_deinit already destroyed");
     }
 }
 
@@ -118,6 +122,7 @@ static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
 
         return (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
     } else {
+        g_debug("[%s:%d] not possible to preparate because not socket initialized", __func__, __LINE__);
         return FALSE;
     }
 }
