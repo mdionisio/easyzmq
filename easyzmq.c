@@ -434,11 +434,10 @@ static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GM
     }
     g_assert(l_context != NULL);
 
-    GZmqSource *source = NULL;
-
     g_debug("[%s:%d] GZmqSource creating ...", __func__, __LINE__);
 
-    source = (GZmqSource *) g_source_new(&_g_zmq_source_funcs, sizeof (GZmqSource));
+    GZmqSource * source = (GZmqSource *) g_source_new(&_g_zmq_source_funcs, sizeof (GZmqSource));
+    g_assert(source != NULL);
 
     source->zmq_owned_socket = l_zmq_socket;
     source->type = EASY_ZMQ_UNKNOWN;
@@ -1449,8 +1448,8 @@ GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) 
     g_assert(zmq_source->zmq_owned_socket != NULL);
     if (zmq_source->zmq_source_monitor == NULL) {
         guint64 unique = get_unique();
-        gchar *address = g_strdup_printf("inproc://%" G_GUINT64_FORMAT, unique);
-        g_assert(address != NULL);
+        gchar address[32];
+        g_snprintf(address, G_N_ELEMENTS(address), "inproc://%" G_GINT64_MODIFIER "x", unique);
 
         if (zmq_socket_monitor (zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ATTACHED) == 0) {
             zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context ((GSource *) zmq_source));
@@ -1473,7 +1472,6 @@ GZmqSource * get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) 
         } else {
             g_warning("error creating monitor socket: %s", clean_errno());
         }
-        g_free(address); address = NULL;
 
         return zmq_source->zmq_source_monitor;
     } else {
