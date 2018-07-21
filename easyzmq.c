@@ -101,8 +101,8 @@ struct _ZmqSource {
     GDestroyNotify destroy_user_data;
 };
 
-#define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
-//#define ZMQ_SEND_FLAGS 0
+//#define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
+#define ZMQ_SEND_FLAGS 0
 
 static void _pollfdOn(GZmqSource *source);
 static void _pollfdOff(GZmqSource *source);
