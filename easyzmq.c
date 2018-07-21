@@ -66,8 +66,9 @@ void easy_zmq_init(void) {
 void easy_zmq_deinit(void) {
     if (zmq_context != NULL) {
         g_debug("destroy zmq context");
-        zmq_ctx_term (zmq_context);
+        void *zmq_old_context = zmq_context;
         zmq_context = NULL;
+        zmq_ctx_term (zmq_old_context);
     } else {
         g_warning("easy_zmq_deinit already destroyed");
     }
