@@ -32,6 +32,16 @@ static int _zmq_setsockopt (void *socket, int option_name, const void *option_va
     return retval;
 }
 
+
+int _zmq_getsockopt (void *socket, int option_name, void *option_value, size_t *option_len) {
+    g_assert(socket != NULL);
+    int retval = 0;
+    do {
+        retval = zmq_getsockopt (socket, option_name, option_value, option_len);
+    } while ((retval != 0) && (zmq_errno() == EINTR));
+    return retval;
+}
+
 static guint64 get_unique(void) {
 #ifdef HAVE_ATOMIC
     static atomic_uint_fast64_t counter = 0U;
@@ -102,7 +112,7 @@ static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
         *timeout = -1;
         int zevents = 0;
         size_t zevents_len = sizeof (zevents);
-        assert_errno(zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+        assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
         //g_debug("[%s:%d] (%p) <- %d", __func__, __LINE__, (void*)source, (int)ret);
 
@@ -120,7 +130,7 @@ static gboolean _g_zmq_source_check(GSource *source) {
     if (self->zmq_owned_socket != NULL) {
         int zevents = 0;
         size_t zevents_len = sizeof (zevents);
-        assert_errno(zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+        assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
         //g_debug("[%s:%d] (%p) <- %d", __func__, __LINE__, (void*)source, (int)ret);
 
@@ -144,7 +154,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
     for(;;) {
         int zevents = 0;
         size_t zevents_len = sizeof (zevents);
-        assert_errno(zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+        assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
         //g_debug("[%s:%d] event %d on file %p", __func__, __LINE__, zevents, (void*)self->fd);
 
@@ -161,7 +171,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                     if (G_LIKELY(zcallback != NULL)) {
                         int more = 0;
                         size_t more_len = sizeof(more);
-                        assert_errno(zmq_getsockopt (self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
+                        assert_errno(_zmq_getsockopt (self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
                         //g_debug("[%s:%d] received zmq message", __func__, __LINE__);
                         gboolean ret = zcallback(self,
@@ -448,7 +458,7 @@ static GZmqSource * g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GM
 
     int fd = -1;
     size_t fd_len = sizeof (fd);
-    if (zmq_getsockopt(source->zmq_owned_socket, ZMQ_FD, &fd, &fd_len) == 0) {
+    if (_zmq_getsockopt(source->zmq_owned_socket, ZMQ_FD, &fd, &fd_len) == 0) {
 
         g_debug("[%s:%d] GZmqSource zmq fd: %d", __func__, __LINE__, fd);
         source->fd = fd;
