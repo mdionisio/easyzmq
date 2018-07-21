@@ -1,4 +1,10 @@
-project('easyzmq', 'c', 'vala')
+project('easyzmq', 
+	'c', 'vala', 
+	default_options: ['c_std=c11'],
+	version: '0.1',
+    license: 'BSD',
+)
+
 zmqdep = dependency('libzmq')
 glibdep = dependency('glib-2.0')
 giodep = dependency('gio-2.0')
