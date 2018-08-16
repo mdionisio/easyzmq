@@ -33,7 +33,7 @@ static int _zmq_setsockopt (void *socket, int option_name, const void *option_va
 }
 
 
-int _zmq_getsockopt (void *socket, int option_name, void *option_value, size_t *option_len) {
+static int _zmq_getsockopt (void *socket, int option_name, void *option_value, size_t *option_len) {
     g_assert(socket != NULL);
     int retval = 0;
     do {
@@ -41,6 +41,45 @@ int _zmq_getsockopt (void *socket, int option_name, void *option_value, size_t *
     } while ((retval != 0) && (zmq_errno() == EINTR));
     return retval;
 }
+
+static int _zmq_recv (void *socket, void *buf, size_t len, int flags) {
+    g_assert(socket != NULL);
+    int retval = 0;
+    do {
+        retval = zmq_recv (socket, buf, len, flags);
+    } while ((retval == -1) && (zmq_errno() == EINTR));
+    return retval;
+}
+
+static int _zmq_recvmsg (void *socket, zmq_msg_t *msg, int flags) {
+    g_assert(socket != NULL);
+    int retval = 0;
+    do {
+        retval = zmq_recvmsg (socket, msg, flags);
+    } while ((retval == -1) && (zmq_errno() == EINTR));
+    return retval;
+}
+
+static int _zmq_msg_send (zmq_msg_t *msg, void *socket, int flags) {
+    g_assert(socket != NULL);
+    g_assert(msg != NULL);
+    int retval = 0;
+    do {
+        retval = zmq_msg_send (msg, socket, flags);
+    } while ((retval == -1) && (zmq_errno() == EINTR));
+    return retval;
+}
+
+/*
+zmq_msg_init
+zmq_bind
+zmq_unbind
+zmq_connect
+zmq_disconnect
+zmq_socket
+zmq_msg_init_size
+zmq_msg_data
+*/
 
 static guint64 get_unique(void) {
 #ifdef HAVE_ATOMIC
@@ -168,7 +207,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
             //g_debug("[%s:%d] ZMQ_POLLIN", __func__, __LINE__);
             
                 if (self->msg_receive != NULL) {
-                    int rc = zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                    int rc = _zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                     if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
                         g_info("[%s:%d] error receiving zmq message (%d,%zu): %s (%d)", __func__, __LINE__, rc, self->size_receive, clean_errno(), zmq_errno());
                         return zcallback(self, NULL, 0, FALSE, user_data);
@@ -194,7 +233,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                 } else {
                     zmq_msg_t msg;
                     if (zmq_msg_init (&msg) == 0) {
-                        ssize_t size = zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                        ssize_t size = _zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                         gboolean ret = FALSE;
                         if (size < 0) {
                             g_info("[%s:%d] error receiving zmq message: %s (%d)", __func__, __LINE__, clean_errno(), zmq_errno());
@@ -659,7 +698,7 @@ gboolean send_zmq_rep(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         _pollfdOff(zmq_source);
@@ -683,7 +722,7 @@ gboolean send_zmq_resp_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         _pollfdOff(zmq_source);
@@ -821,7 +860,7 @@ gboolean send_zmq_router(GZmqSource *zmq_source, void *pdata, const guint8 *buf,
             idenity_list_element_t *elem = (idenity_list_element_t*)(identity_element->data);
             g_assert(elem != NULL);
             assert_errno(zmq_msg_init_data(&message, elem->buf, elem->len, my_zmq_free_fn, g_free) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
-            int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
+            int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
             if (G_UNLIKELY(r == -1)) {
                 g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
             }
@@ -833,7 +872,7 @@ gboolean send_zmq_router(GZmqSource *zmq_source, void *pdata, const guint8 *buf,
     {
         zmq_msg_t message;
         assert_errno(zmq_msg_init_size(&message, 0) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
-        int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
+        int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
         if (G_UNLIKELY(r == -1)) {
             g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
         }
@@ -842,7 +881,7 @@ gboolean send_zmq_router(GZmqSource *zmq_source, void *pdata, const guint8 *buf,
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
     if (G_UNLIKELY(r == -1)) {
         g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
         return FALSE;
@@ -873,7 +912,7 @@ gboolean send_zmq_router_take(GZmqSource *zmq_source, void *pdata, guint8 *buf, 
             idenity_list_element_t *elem = (idenity_list_element_t*)(identity_element->data);
             g_assert(elem != NULL);
             assert_errno(zmq_msg_init_data(&message, elem->buf, elem->len, my_zmq_free_fn, g_free) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
-            int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
+            int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
             if (G_UNLIKELY(r == -1)) {
                 g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
             }
@@ -885,7 +924,7 @@ gboolean send_zmq_router_take(GZmqSource *zmq_source, void *pdata, guint8 *buf, 
     {
         zmq_msg_t message;
         assert_errno(zmq_msg_init_size(&message, 0) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
-        int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
+        int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE);
         if (G_UNLIKELY(r == -1)) {
             g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
         }
@@ -893,7 +932,7 @@ gboolean send_zmq_router_take(GZmqSource *zmq_source, void *pdata, guint8 *buf, 
     
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
@@ -1071,7 +1110,7 @@ gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         g_info("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
@@ -1154,7 +1193,7 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), zmq_errno());
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         g_info("[%s:%d] send req message error (%d, %s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
@@ -1255,7 +1294,7 @@ gboolean send_zmq_pub(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (r == -1) {
         g_debug("[%s:%d] send pub message error (%d, %s)", __func__, __LINE__, zmq_errno(), clean_errno());
@@ -1279,7 +1318,7 @@ gboolean send_zmq_pub_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestro
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), zmq_errno());
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (r == -1) {
         g_debug("[%s:%d] send pub message error (%d, %s)", __func__, __LINE__, zmq_errno(), clean_errno());
@@ -1316,7 +1355,7 @@ gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
@@ -1336,7 +1375,7 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_errno(), errno);
-    int r = zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
         g_debug("[%s:%d] send resp message error (%d,%s) [%p,%p]", __func__, __LINE__, zmq_errno(), clean_errno(), (void*)zmq_source, (void*)zmq_source->zmq_owned_socket);
