@@ -17,8 +17,13 @@
 
 #define assert_errno(x, message, ...) do { \
                             if (G_UNLIKELY(!(x))) { \
-                                fprintf(stderr, message, ##__VA_ARGS__); \
                                 g_error("%s:%d - " message, __FILE__, __LINE__, ##__VA_ARGS__); \
+                            } \
+                        } while (0);
+                        
+#define check_errno(x, message, ...) do { \
+                            if (G_UNLIKELY(!(x))) { \
+                                g_info("%s:%d - " message, __FILE__, __LINE__, ##__VA_ARGS__); \
                             } \
                         } while (0);
 
@@ -307,7 +312,7 @@ static void _g_zmq_source_finalize(GSource *source) {
     if (self->zmq_owned_socket != NULL) {
         g_debug("[%s:%d] (%p) close zmq", __func__, __LINE__, (void*)source);
         int linger = 0;
-        assert_errno(_zmq_setsockopt(self->zmq_owned_socket, ZMQ_LINGER, &linger, sizeof(linger)) == 0, "error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
+        check_errno(_zmq_setsockopt(self->zmq_owned_socket, ZMQ_LINGER, &linger, sizeof(linger)) == 0, "error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
         assert_errno(zmq_close(self->zmq_owned_socket) == 0, "error %s[%d] on zmq_close", clean_errno(), zmq_errno());
         self->zmq_owned_socket = NULL;
     }
