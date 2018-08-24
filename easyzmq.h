@@ -10,6 +10,7 @@
 
 #include <glib.h>
 #include <gio/gio.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +29,7 @@ extern "C" {
 		EASY_ZMQ_REP,
         EASY_ZMQ_PAIR,
         EASY_ZMQ_ROUTER,
-        EASY_ZMQ_UNKNOWN,
+        EASY_ZMQ_UNKNOWN
     } easyzmq_socket_t;
 
     typedef enum {
@@ -43,7 +44,7 @@ extern "C" {
         EASYZMQ_EVENT_CLOSED,             // DISCARDED from callback
         EASYZMQ_EVENT_CLOSE_FAILED,
         EASYZMQ_EVENT_DISCONNECTED,
-        EASYZMQ_EVENT_MONITOR_STOPPED,
+        EASYZMQ_EVENT_MONITOR_STOPPED
     } easyzmq_monitor_event_t;
 
     void easy_zmq_init(void);
