@@ -3,121 +3,114 @@
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-#include <glib.h>
-#include <glib-object.h>
-#include <gio/gio.h>
 #include "easyzmq.h"
+#include <gio/gio.h>
+#include <glib-object.h>
+#include <glib.h>
 
 typedef struct _SendReq_asyncData SendReq_asyncData;
 
-
 struct _SendReq_asyncData {
-	GAsyncResult* _res_;
-	GSimpleAsyncResult* _async_result;
-	GZmqSource* req;
-	const guint8 *bufout;
-	gint bufout_length;
-	gboolean more;
+    GAsyncResult *_res_;
+    GSimpleAsyncResult *_async_result;
+    GZmqSource *req;
+    const guint8 *bufout;
+    gint bufout_length;
+    gboolean more;
 };
 
+static void SendReq_async_data_free(gpointer _data);
+void send_zmq_req_async(GZmqSource *req, guint timeoutms, const guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
+void send_zmq_req_finish(GZmqSource *req, GAsyncResult *_res_, const guint8 **bufout, int *bufout_length, gboolean *more);
+static gboolean _gzmqsourcecallback_easy(GZmqSource *zmq_source, const guint8 *buf, int buf_length, gboolean more, gpointer self);
 
-
-static void SendReq_async_data_free (gpointer _data);
-void send_zmq_req_async (GZmqSource* req, guint timeoutms, const guint8* buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
-void send_zmq_req_finish (GZmqSource* req, GAsyncResult* _res_, const guint8** bufout, int* bufout_length, gboolean *more);
-static gboolean _gzmqsourcecallback_easy (GZmqSource* zmq_source, const guint8 *buf, int buf_length, gboolean more, gpointer self);
-
-
-static void SendReq_async_data_free (gpointer _data) {
-	SendReq_asyncData* _data_= _data;
-	g_zmq_source_unref (_data_->req);
-	g_slice_free (SendReq_asyncData, _data_);
+static void SendReq_async_data_free(gpointer _data) {
+	g_assert(_data != NULL);
+    SendReq_asyncData *_data_ = _data;
+    g_zmq_source_unref(_data_->req);
+    g_slice_free(SendReq_asyncData, _data_);
 }
 
+void send_zmq_req_async(GZmqSource *req, guint timeoutms, const guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_) {
+    g_assert(req != NULL);
+    g_assert(_callback_ != NULL);
 
-void send_zmq_req_async (GZmqSource* req, guint timeoutms, const guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_) {
-	g_assert(req != NULL);
-	g_assert(_callback_ != NULL);
+    SendReq_asyncData *_data_ = g_slice_new0(SendReq_asyncData);
+    _data_->_async_result = g_simple_async_result_new(NULL, _callback_, _user_data_, send_zmq_req_async);
+    g_simple_async_result_set_op_res_gpointer(_data_->_async_result, _data_, SendReq_async_data_free);
+    g_zmq_source_ref(req);
+    _data_->req = req;
+    _data_->bufout = NULL;
+    _data_->bufout_length = 0;
 
-	SendReq_asyncData* _data_ = g_slice_new0 (SendReq_asyncData);
-	_data_->_async_result = g_simple_async_result_new (NULL, _callback_, _user_data_, send_zmq_req_async);
-	g_simple_async_result_set_op_res_gpointer (_data_->_async_result, _data_, SendReq_async_data_free);
-	g_zmq_source_ref (req);
-	_data_->req = req;
-	_data_->bufout = NULL;
-	_data_->bufout_length = 0;
-	
-	gboolean sendret = send_zmq_req_easy (_data_->req, timeoutms, buf, buf_length, _gzmqsourcecallback_easy, _data_);
-	if (sendret) { 
-		// continue ...
-	} else {
-		g_simple_async_result_complete_in_idle (_data_->_async_result);  // immidiatly continue the async call with error answer
-		g_object_unref (_data_->_async_result);
-	}
+    gboolean sendret = send_zmq_req_easy(_data_->req, timeoutms, buf, buf_length, _gzmqsourcecallback_easy, _data_);
+    if (sendret) {
+        // continue ...
+    } else {
+        g_simple_async_result_complete_in_idle(_data_->_async_result); // immidiatly continue the async call with error answer
+        g_object_unref(_data_->_async_result);
+    }
 }
 
-void send_zmq_req_take_async (GZmqSource* req, guint timeoutms, guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_) {
-	g_assert(req != NULL);
-	g_assert(_callback_ != NULL);
+void send_zmq_req_take_async(GZmqSource *req, guint timeoutms, guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_) {
+    g_assert(req != NULL);
+    g_assert(_callback_ != NULL);
 
-	SendReq_asyncData* _data_ = g_slice_new0 (SendReq_asyncData);
-	_data_->_async_result = g_simple_async_result_new (NULL, _callback_, _user_data_, send_zmq_req_async);
-	g_simple_async_result_set_op_res_gpointer (_data_->_async_result, _data_, SendReq_async_data_free);
-	g_zmq_source_ref (req);
-	_data_->req = req;
-	_data_->bufout = NULL;
-	_data_->bufout_length = 0;
-	_data_->more = FALSE;
-	
-	gboolean sendret = send_zmq_req_easy (_data_->req, timeoutms, buf, buf_length, _gzmqsourcecallback_easy, _data_);
-	if (sendret) { 
-		// continue ...
-	} else {
-		g_simple_async_result_complete_in_idle (_data_->_async_result);  // immidiatly continue the async call with error answer
-		g_object_unref (_data_->_async_result);
-	}
+    SendReq_asyncData *_data_ = g_slice_new0(SendReq_asyncData);
+    _data_->_async_result = g_simple_async_result_new(NULL, _callback_, _user_data_, send_zmq_req_async);
+    g_simple_async_result_set_op_res_gpointer(_data_->_async_result, _data_, SendReq_async_data_free);
+    g_zmq_source_ref(req);
+    _data_->req = req;
+    _data_->bufout = NULL;
+    _data_->bufout_length = 0;
+    _data_->more = FALSE;
+
+    gboolean sendret = send_zmq_req_easy(_data_->req, timeoutms, buf, buf_length, _gzmqsourcecallback_easy, _data_);
+    if (sendret) {
+        // continue ...
+    } else {
+        g_simple_async_result_complete_in_idle(_data_->_async_result); // immidiatly continue the async call with error answer
+        g_object_unref(_data_->_async_result);
+    }
 }
 
+void send_zmq_req_finish(GZmqSource *req, GAsyncResult *_res_, const guint8 **bufout, int *bufout_length, gboolean *more) {
+    g_assert(req != NULL);
+    g_assert(_res_ != NULL);
 
-void send_zmq_req_finish (GZmqSource* req, GAsyncResult* _res_, const guint8** bufout, int* bufout_length, gboolean *more) {
-	g_assert(req != NULL);
-	g_assert(_res_ != NULL);
+    SendReq_asyncData *_data_ = g_simple_async_result_get_op_res_gpointer(G_SIMPLE_ASYNC_RESULT(_res_));
+    g_assert(_data_ != NULL);
 
-	SendReq_asyncData* _data_ = g_simple_async_result_get_op_res_gpointer (G_SIMPLE_ASYNC_RESULT (_res_));
-	g_assert(_data_ != NULL);
+    if (bufout) {
+        *bufout = _data_->bufout;
+    }
+    _data_->bufout = NULL;
+    if (bufout_length) {
+        *bufout_length = _data_->bufout_length;
+    }
+    _data_->bufout_length = 0;
 
-	if (bufout) {
-		*bufout = _data_->bufout;
-	}
-	_data_->bufout = NULL;
-	if (bufout_length) {
-		*bufout_length = _data_->bufout_length;
-	}
-	_data_->bufout_length = 0;
-	
-	if (more) {
-		*more = _data_->more;
-	}
-	_data_->more = FALSE;
+    if (more) {
+        *more = _data_->more;
+    }
+    _data_->more = FALSE;
 }
 
+static gboolean _gzmqsourcecallback_easy(GZmqSource *zmq_source, const guint8 *buf, int buf_length, gboolean more, gpointer self) {
+    SendReq_asyncData *_data_ = (SendReq_asyncData *)self;
 
-static gboolean _gzmqsourcecallback_easy (GZmqSource* zmq_source, const guint8 *buf, int buf_length, gboolean more, gpointer self) {
-	SendReq_asyncData* _data_ = (SendReq_asyncData*) self;
+    gboolean result = FALSE;
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    if (buf_length != 0) {
+        _data_->bufout = buf;
+        _data_->bufout_length = buf_length;
+    }
+    _data_->more = more;
 
-	gboolean result = FALSE;
-	g_return_val_if_fail (zmq_source != NULL, FALSE);
-	if (buf_length != 0) {
-		_data_->bufout = buf;
-		_data_->bufout_length = buf_length;
-	}
-	_data_->more = more;
+    g_simple_async_result_complete(_data_->_async_result);
 
-	g_simple_async_result_complete (_data_->_async_result);
-	
-	g_object_unref (_data_->_async_result);
+    g_object_unref(_data_->_async_result);
 
-	result = TRUE;
-	return result;
+    result = TRUE;
+    return result;
 }
-
