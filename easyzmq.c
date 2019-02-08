@@ -122,7 +122,7 @@ struct _ZmqSource {
     gint ref_count;
     easyzmq_socket_t type;
     GZmqSource *zmq_source_monitor;
-    gpointer *user_data;
+    gpointer user_data;
     GDestroyNotify destroy_user_data;
 };
 
