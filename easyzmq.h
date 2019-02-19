@@ -22,7 +22,13 @@ typedef struct _ZmqSource GZmqSource;
 
 GQuark easyzmq_error_quark(void);
 
-typedef enum { EASY_ZMQ_PUB, EASY_ZMQ_SUB, EASY_ZMQ_REQ, EASY_ZMQ_REP, EASY_ZMQ_PAIR, EASY_ZMQ_ROUTER, EASY_ZMQ_UNKNOWN } easyzmq_socket_t;
+typedef enum { EASY_ZMQ_PUB,
+               EASY_ZMQ_SUB,
+               EASY_ZMQ_REQ,
+               EASY_ZMQ_REP,
+               EASY_ZMQ_PAIR,
+               EASY_ZMQ_ROUTER,
+               EASY_ZMQ_UNKNOWN } easyzmq_socket_t;
 
 typedef enum {
     EASYZMQ_EVENT_UNKNOWN = 0,

@@ -23,34 +23,32 @@
 
 static GMainLoop *loop = NULL;
 
-
 typedef struct timeout_data {
     GZmqSource *gzmq_publisher;
 } typeoutdata_t;
 
+gboolean timeout_cb(gpointer user_data) {
+    typeoutdata_t *readdata = (typeoutdata_t *)user_data;
 
-gboolean timeout_cb (gpointer user_data) {
-    typeoutdata_t *readdata = (typeoutdata_t *) user_data;
-    
     GZmqSource *gzmq_publisher = readdata->gzmq_publisher;
-    
+
     static int counter = 0;
     struct timeval now;
     gettimeofday(&now, NULL);
-    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec / 1000);
     printf("%-10ld: timeout counter: %d\n", msec, counter);
-    
+
     gchar *datasend = g_strdup_printf("req counter: %d\n", counter);
     size_t len = strlen(datasend) + 1;
-    
+
     if (gzmq_publisher != NULL) {
-        send_zmq_pub(gzmq_publisher, (guint8*)datasend, len);
+        send_zmq_pub(gzmq_publisher, (guint8 *)datasend, len);
     }
-    
+
     g_free(datasend);
-    
+
     counter++;
-    
+
     if (counter < 15) {
         return G_SOURCE_CONTINUE;
     } else {
@@ -63,42 +61,40 @@ gboolean timeout_cb (gpointer user_data) {
 
 const char default_address[] = "tcp://0.0.0.0:61000";
 
-static gboolean signal_handler (gpointer user_data)
-{
-    int signo = GPOINTER_TO_INT (user_data);
+static gboolean signal_handler(gpointer user_data) {
+    int signo = GPOINTER_TO_INT(user_data);
     switch (signo) {
-        case SIGINT:
-            g_main_loop_quit(loop);
-            break;
-        default:
-            break;
+    case SIGINT:
+        g_main_loop_quit(loop);
+        break;
+    default:
+        break;
     }
     return G_SOURCE_CONTINUE;
 }
 
-
-void monitor_callback (GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len) {
+void monitor_callback(GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len) {
     assert(zmq_source != NULL);
     assert(address != NULL);
     assert(len > 0);
 
-    printf("-------------> %u - %u - %.*s (%d)\n", (unsigned int) event, (unsigned int) value, len, (const char *)address, len);
+    printf("-------------> %u - %u - %.*s (%d)\n", (unsigned int)event, (unsigned int)value, len, (const char *)address, len);
 }
 
 /*
  * 
  */
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     const char *address = default_address;
     easy_zmq_init();
-    
+
     loop = g_main_loop_new(NULL, FALSE);
-  
+
     if (argc >= 2) {
         address = argv[1];
     }
     printf("address: %s\n", address);
-    
+
     GZmqSource *gzmq_publisher = g_zmq_source_pub_new(g_main_loop_get_context(loop));
     if (gzmq_publisher != NULL) {
         g_debug("[%s:%d] publischer created (%p)", __func__, __LINE__, gzmq_publisher);
@@ -106,20 +102,20 @@ int main(int argc, char** argv) {
         GZmqSource *gzmq_publisher_mon = get_zmq_socket_monitor(gzmq_publisher, monitor_callback);
         if (gzmq_publisher_mon != NULL) {
 
-            if (g_easyzmq_bind(gzmq_publisher, address, NULL) == TRUE ) {
-                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
+            if (g_easyzmq_bind(gzmq_publisher, address, NULL) == TRUE) {
+                g_unix_signal_add(SIGINT, signal_handler, GINT_TO_POINTER(SIGINT));
 
                 static typeoutdata_t data_timeout;
                 data_timeout.gzmq_publisher = gzmq_publisher;
-                
+
                 g_timeout_add(1000, timeout_cb, &data_timeout);
 
-                g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
-                
+                g_unix_signal_add(SIGINT, signal_handler, GINT_TO_POINTER(SIGINT));
+
                 g_debug("[%s:%d] start mainloop", __func__, __LINE__);
-                    
+
                 g_main_loop_run(loop);
-                
+
             } else {
                 g_warning("[%s:%d] error bind", __func__, __LINE__);
             }
@@ -148,11 +144,8 @@ int main(int argc, char** argv) {
         g_main_loop_unref(loop);
         loop = NULL;
     }
-    
-    
-    
+
     easy_zmq_deinit();
-    
+
     return (EXIT_SUCCESS);
 }
-

@@ -30,7 +30,7 @@ typedef struct timeout_data {
     GZmqSource *gzmq_requester;
 } typeoutdata_t;
 
-static typeoutdata_t data_timeout = { NULL };
+static typeoutdata_t data_timeout = {NULL};
 
 gboolean init_requester(G_GNUC_UNUSED gpointer user_data) {
     int rc __attribute__((unused));
@@ -54,57 +54,57 @@ gboolean init_requester(G_GNUC_UNUSED gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean req_callback (GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
     assert(zmq_source != NULL);
     struct timeval now;
     gettimeofday(&now, NULL);
-    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec / 1000);
     if ((buf != NULL) && (len > 0)) {
-        const gchar* data = (const gchar*)buf;
-        printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int) len);
+        const gchar *data = (const gchar *)buf;
+        printf("%-10ld: req socket receive: '%s' len:%u\n", msec, data, (unsigned int)len);
     } else {
         printf("%-10ld: req socket timeout\n", msec);
         //g_idle_add(init_requester, NULL);
         init_requester(NULL);
     }
-    
+
     return TRUE;
 }
 
-void destroy_userdata (gpointer data) {
-    char * cdata = (char*)data;
+void destroy_userdata(gpointer data) {
+    char *cdata = (char *)data;
     printf("request to destroy user data: %s\n", cdata);
     g_free(data);
 }
 
-void destroy_data (gpointer data) {
-    char * cdata = (char*)data;
+void destroy_data(gpointer data) {
+    char *cdata = (char *)data;
     printf("request to destroy data: %s\n", cdata);
     g_free(data);
 }
 
-gboolean timeout_cb (G_GNUC_UNUSED gpointer user_data) {
+gboolean timeout_cb(G_GNUC_UNUSED gpointer user_data) {
     GZmqSource *gzmq_requester = data_timeout.gzmq_requester;
-    
+
     static int counter = 0;
     struct timeval now;
     gettimeofday(&now, NULL);
-    long int msec = (now.tv_sec * 1000L + now.tv_usec/1000);
+    long int msec = (now.tv_sec * 1000L + now.tv_usec / 1000);
     printf("%-10ld: send request counter: %d\n", msec, counter);
-    
+
     if (gzmq_requester != NULL) {
         gchar *datasend = g_strdup_printf("req counter: %d\n", counter);
         size_t len = strlen(datasend) + 1;
 
         //assert( send_zmq_req(gzmq_requester, 1000, datasend, len, req_callback, NULL, NULL) == TRUE);
         gchar *userdata = g_strdup_printf("%d\n", counter);
-        if ( send_zmq_req_take(gzmq_requester, 1000, (guint8*)datasend, len, destroy_data, req_callback, userdata, destroy_userdata) != TRUE) {
+        if (send_zmq_req_take(gzmq_requester, 1000, (guint8 *)datasend, len, destroy_data, req_callback, userdata, destroy_userdata) != TRUE) {
             printf("req socket send failed\n");
         }
     }
-    
+
     counter++;
-    
+
     if (counter < 15) {
         return G_SOURCE_CONTINUE;
     } else {
@@ -115,15 +115,14 @@ gboolean timeout_cb (G_GNUC_UNUSED gpointer user_data) {
     }
 }
 
-static gboolean signal_handler (gpointer user_data)
-{
-    int signo = GPOINTER_TO_INT (user_data);
+static gboolean signal_handler(gpointer user_data) {
+    int signo = GPOINTER_TO_INT(user_data);
     switch (signo) {
-        case SIGINT:
-            g_main_loop_quit(loop);
-            break;
-        default:
-            break;
+    case SIGINT:
+        g_main_loop_quit(loop);
+        break;
+    default:
+        break;
     }
     return G_SOURCE_CONTINUE;
 }
@@ -131,43 +130,42 @@ static gboolean signal_handler (gpointer user_data)
 /*
  * 
  */
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     address = default_address;
-    
+
     easy_zmq_init();
-    
+
     loop = g_main_loop_new(NULL, FALSE);
 
     if (argc >= 2) {
         address = argv[1];
     }
-    
+
     init_requester(NULL);
-    
-    g_debug("[%s:%d] start mainloop", __func__, __LINE__);    
-    
+
+    g_debug("[%s:%d] start mainloop", __func__, __LINE__);
+
     g_timeout_add(2000, timeout_cb, NULL);
 
-    g_unix_signal_add (SIGINT, signal_handler, GINT_TO_POINTER (SIGINT));
-        
+    g_unix_signal_add(SIGINT, signal_handler, GINT_TO_POINTER(SIGINT));
+
     g_main_loop_run(loop);
 
     g_debug("[%s:%d] stop mainloop", __func__, __LINE__);
-    
+
     if (loop != NULL) {
         g_debug("[%s:%d] unref mainloop", __func__, __LINE__);
         g_main_loop_unref(loop);
         loop = NULL;
     }
-    
+
     if (data_timeout.gzmq_requester != NULL) {
         g_debug("[%s:%d] destroy gzmq_requester", __func__, __LINE__);
         g_zmq_source_close(&data_timeout.gzmq_requester);
         data_timeout.gzmq_requester = NULL;
     }
-    
+
     easy_zmq_deinit();
-    
+
     return (EXIT_SUCCESS);
 }
-

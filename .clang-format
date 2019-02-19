@@ -1,0 +1,24 @@
+#
+# remember that
+# The code between a comment // clang-format off or /* clang-format off */ up to
+# a comment // clang-format on or /* clang-format on */ will not be formatted.
+# 
+# find ./ -type f -iname "*.h"  -exec clang-format -i {} \;
+# find ./ -type f -iname "*.c"  -exec clang-format -i {} \;
+#
+
+# Base stile are:
+# LLVM            https://llvm.org/docs/CodingStandards.html
+# Google          
+# Chromium        https://www.chromium.org/developers/coding-style
+# Mozilla         https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Coding_Style
+# WebKit          https://webkit.org/code-style-guidelines/
+
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+IndentWidth: 4
+# disable ColumnLimit
+ColumnLimit: 0
+
+#
+SortIncludes: false
