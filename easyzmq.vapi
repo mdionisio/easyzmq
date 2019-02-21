@@ -1,7 +1,7 @@
 [CCode (cheader_filename = "easyzmq.h")]
 namespace EasyZmq {
     public errordomain Error {
-		EINVAL,
+        EINVAL,
         EPROTONOSUPPORT,
         ENOCOMPATPROTO,
         ETERM,
@@ -13,13 +13,13 @@ namespace EasyZmq {
         EADDRNOTAVAIL,
         ENODEV,
         EINTR;
-		public static GLib.Quark quark ();
-	}
+        public static GLib.Quark quark ();
+    }
 
     [CCode (cname = "easyzmq_monitor_event_t", cprefix = "EASYZMQ_EVENT_", has_type_id = false)]
     public enum monitor_event {
         UNKNOWN,
-		CONNECTED,
+        CONNECTED,
         CONNECT_DELAYED,
         CONNECT_RETRIED,
         LISTENING,
@@ -42,8 +42,8 @@ namespace EasyZmq {
     public void* get_zmq_context();
 
     [Compact]
-	[CCode (cname = "GZmqSource", ref_function = "g_zmq_source_ref", unref_function = "g_zmq_source_unref")]
-	public class ZmqSource {
+    [CCode (cname = "GZmqSource", ref_function = "g_zmq_source_ref", unref_function = "g_zmq_source_unref")]
+    public class ZmqSource {
         [CCode (cname = "g_zmq_source_req_new")]
         public ZmqSource.Req (size_t max_size = 0, GLib.MainContext ? gcontext = null);
 
