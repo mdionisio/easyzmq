@@ -352,13 +352,13 @@ void g_zmq_source_unref(GZmqSource *self) {
     if (ISNOTNULL(self)) {
         if (self->ref_count > 0) {
             self->ref_count--;
+            if (self->ref_count == 0) {
+                g_source_destroy((GSource *)self);
+            } else {
+                g_source_unref((GSource *)self);
+            }
         } else {
             g_warn_if_reached();
-        }
-        if (self->ref_count == 0) {
-            g_source_destroy((GSource *)self);
-        } else {
-            g_source_unref((GSource *)self);
         }
     }
 }
