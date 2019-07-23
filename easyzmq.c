@@ -198,10 +198,13 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                     int rc = _zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                     if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
                         g_info("error receiving zmq message (%d,%zu): %s (%d)", rc, self->size_receive, clean_errno(), zmq_errno());
-                        return zcallback(self, NULL, 0, FALSE, user_data);
-                    }
-
-                    if (ISNOTNULL(zcallback)) {
+                        if (ISNOTNULL(zcallback)) {
+                            return zcallback(self, NULL, 0, FALSE, user_data);
+                        } else {
+                            g_info("receive error when there is no subscription on it");
+                            return G_SOURCE_REMOVE;
+                        }
+                    } else if (ISNOTNULL(zcallback)) {
                         int more = 0;
                         size_t more_len = sizeof(more);
                         assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
@@ -223,7 +226,12 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                         gboolean ret = FALSE;
                         if (size < 0) {
                             g_info("error receiving zmq message: %s (%d)", clean_errno(), zmq_errno());
-                            ret = zcallback(self, NULL, 0, FALSE, user_data);
+                            if (ISNOTNULL(zcallback)) {
+                                ret = zcallback(self, NULL, 0, FALSE, user_data);
+                            } else {
+                                g_info("receive error when there is no subscription on it");
+                                ret = G_SOURCE_REMOVE;
+                            }
                         } else {
                             if (ISNOTNULL(zcallback)) {
                                 ret = zcallback(self, (const guint8 *)zmq_msg_data(&msg), zmq_msg_size(&msg), zmq_msg_more(&msg), user_data);
