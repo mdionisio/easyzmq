@@ -33,8 +33,6 @@ typedef struct timeout_data {
 static typeoutdata_t data_timeout = {NULL};
 
 gboolean init_requester(G_GNUC_UNUSED gpointer user_data) {
-    int rc __attribute__((unused));
-
     if (data_timeout.gzmq_requester != NULL) {
         g_zmq_source_unref(data_timeout.gzmq_requester);
         data_timeout.gzmq_requester = NULL;
