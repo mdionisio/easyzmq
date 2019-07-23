@@ -88,10 +88,10 @@ namespace EasyZmq {
         [CCode (cname = "send_zmq_req_take")]
         public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
 
-        [CCode (cname = "send_zmq_req_async", finish_function = "send_zmq_req_finish")]
+        [CCode (cname = "send_zmq_req_async", finish_name = "send_zmq_req_finish")]
         public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
 
-        [CCode (cname = "send_zmq_req_take_async", finish_function = "send_zmq_req_finish")]
+        [CCode (cname = "send_zmq_req_take_async", finish_name = "send_zmq_req_finish")]
         public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout, out bool more);
 
         // Replay
