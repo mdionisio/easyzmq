@@ -222,7 +222,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                 } else {
                     zmq_msg_t msg;
                     if (zmq_msg_init(&msg) == 0) {
-                        ssize_t size = _zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                        int size = _zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                         gboolean ret = FALSE;
                         if (size < 0) {
                             g_info("error receiving zmq message: %s (%d)", clean_errno(), zmq_errno());
@@ -234,7 +234,10 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                             }
                         } else {
                             if (ISNOTNULL(zcallback)) {
-                                ret = zcallback(self, (const guint8 *)zmq_msg_data(&msg), zmq_msg_size(&msg), zmq_msg_more(&msg), user_data);
+                                ret = zcallback(self, 
+                                    (const guint8 *)zmq_msg_data(&msg), 
+                                    (int)zmq_msg_size(&msg), // I think that this cast is always valid and also the variable size can be use
+                                    zmq_msg_more(&msg), user_data);
                             } else {
                                 g_info("receive message when there is no subscription on it");
                                 ret = G_SOURCE_REMOVE;
@@ -621,7 +624,7 @@ static gboolean rep_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
     g_assert(user_data != NULL);
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_REP);
-    rep_callback_data_t *const pdata = user_data;
+    rep_callback_data_t *const pdata = (rep_callback_data_t *)user_data;
 
     if (!more) {
         _pollfdOff(zmq_source);
@@ -727,7 +730,7 @@ static gboolean router_callback(GZmqSource *zmq_source, const guint8 *buf, int l
     g_assert(user_data != NULL);
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_ROUTER);
-    router_callback_data_t *const pdata = user_data;
+    router_callback_data_t *const pdata = (router_callback_data_t *)user_data;
 
     if (pdata->identity_completed == FALSE) {
         g_assert(more);
@@ -907,7 +910,7 @@ typedef struct req_callback_data {
 
 static void req_callback_data_free(gpointer data) {
     if (ISNOTNULL(data)) {
-        req_callback_data_t *const pdata = data;
+        req_callback_data_t *const pdata = (req_callback_data_t *)data;
         if (G_LIKELY((pdata->notify != NULL) && (pdata->user_data != NULL))) {
             pdata->notify(pdata->user_data);
         }
@@ -921,7 +924,7 @@ static void req_callback_data_free(gpointer data) {
 
 static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
     g_assert(user_data != NULL);
-    req_callback_data_t *const pdata = user_data;
+    req_callback_data_t *const pdata = (req_callback_data_t *)user_data;
     if ((pdata->timeout_handler == 0) && (pdata->timeoutms > 0U)) {
         g_warning("timeout already manage so skip this");
     } else {
@@ -1143,6 +1146,8 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
             pdata->timeout_handler = g_timeout_add(timeoutms, req_timeout_callback, pdata);
             if (pdata->timeout_handler > 0U) {
                 pdata->timeoutms = timeoutms;
+            } else {
+                g_error("g_timeout_add return invalid handler so call is with no timeout");
             }
         }
         ret = TRUE;
