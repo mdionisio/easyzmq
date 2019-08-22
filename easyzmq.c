@@ -1321,7 +1321,7 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
 typedef struct monitor_callback_data {
     int state;
     guint32 value;
-    easyzmq_socket_t event;
+    easyzmq_monitor_event_t event;
     GZmqMonitorFunc callback;
 } monitor_callback_data_t;
 
@@ -1329,7 +1329,7 @@ static void monitor_callback_data_free(gpointer data) {
     g_slice_free(monitor_callback_data_t, data);
 }
 
-static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_socket_t *event, guint32 *value) {
+static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_monitor_event_t *event, guint32 *value) {
     // The first frame contains an event number (16 bits), and an event value (32 bits) that provides additional data according to the event number.
     if (6 == len) {
         struct {
@@ -1350,7 +1350,7 @@ static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_so
             } else if (decoded_buffer.event & ZMQ_EVENT_CONNECT_RETRIED) {
                 *event = EASYZMQ_EVENT_CONNECT_RETRIED;
             } else if (decoded_buffer.event & ZMQ_EVENT_LISTENING) {
-                *event = ZMQ_EVENT_LISTENING;
+                *event = EASYZMQ_EVENT_LISTENING;
             } else if (decoded_buffer.event & ZMQ_EVENT_BIND_FAILED) {
                 *event = EASYZMQ_EVENT_BIND_FAILED;
             } else if (decoded_buffer.event & ZMQ_EVENT_ACCEPTED) {
