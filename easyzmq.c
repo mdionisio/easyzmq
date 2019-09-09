@@ -684,7 +684,7 @@ gboolean send_zmq_rep(GZmqSource *zmq_source, const guint8 *buf, int len) {
     }
 }
 
-gboolean send_zmq_resp_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
+gboolean send_zmq_rep_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(buf != NULL);
