@@ -13,14 +13,14 @@
         if (G_UNLIKELY(!(x))) {                                             \
             g_error("%s:%d - " message, __FILE__, __LINE__, ##__VA_ARGS__); \
         }                                                                   \
-    } while (0);
+    } while (0)
 
 #define check_errno(x, message, ...)                                       \
     do {                                                                   \
         if (G_UNLIKELY(!(x))) {                                            \
             g_info("%s:%d - " message, __FILE__, __LINE__, ##__VA_ARGS__); \
         }                                                                  \
-    } while (0);
+    } while (0)
 
 #define ISNULL(x) (G_LIKELY(NULL == (x)))
 #define ISNOTNULL(x) (G_LIKELY(NULL != (x)))
@@ -961,7 +961,7 @@ static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
     return G_SOURCE_CONTINUE;
 }
 
-gboolean req_timeout_callback(gpointer user_data) {
+static gboolean req_timeout_callback(gpointer user_data) {
     g_assert(user_data != NULL);
     req_callback_data_t *const pdata = (req_callback_data_t *)user_data;
     pdata->timeout_handler = 0U;
@@ -1092,9 +1092,9 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
 
     g_source_set_callback((GSource *)zmq_source, (GSourceFunc)req_callback, pdata, req_callback_data_free);
 
-    if (timeoutms > 0U) {
-        int timeoutms = timeoutms;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+    if ((timeoutms) > 0U && (timeoutms < INT_MAX)) {
+        int itimeoutms = (int)timeoutms;
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &itimeoutms, sizeof(itimeoutms)) != 0) {
             g_info("error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
             g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
             return FALSE;
@@ -1112,8 +1112,8 @@ gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf,
             // return FALSE;
         }
     } else {
-        int timeoutms = -1;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
+        int itimeoutms = -1; // means default
+        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &itimeoutms, sizeof(itimeoutms)) != 0) {
             g_info("error %s[%d] on zmq_setsockopt", clean_errno(), zmq_errno());
             g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
             return FALSE;
@@ -1285,7 +1285,7 @@ gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len) {
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, len);
+    memcpy(zmq_msg_data(&message), buf, (size_t)len);
     int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
@@ -1377,7 +1377,7 @@ static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_mo
     }
 }
 
-static gboolean monitor_callback(GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+static gboolean monitor_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
     g_assert(zmq_source != NULL);
     g_assert(user_data != NULL);
     g_assert(buf != NULL);
