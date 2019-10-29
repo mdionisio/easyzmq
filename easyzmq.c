@@ -27,6 +27,7 @@
 
 static int _zmq_setsockopt(void *socket, int option_name, const void *option_value, size_t option_len) {
     g_assert(socket != NULL);
+    g_assert(option_value != NULL);
     int retval = 0;
     do {
         retval = zmq_setsockopt(socket, option_name, option_value, option_len);
@@ -36,6 +37,8 @@ static int _zmq_setsockopt(void *socket, int option_name, const void *option_val
 
 static int _zmq_getsockopt(void *socket, int option_name, void *option_value, size_t *option_len) {
     g_assert(socket != NULL);
+    g_assert(option_value != NULL);
+    g_assert(option_len != NULL);
     int retval = 0;
     do {
         retval = zmq_getsockopt(socket, option_name, option_value, option_len);
@@ -45,6 +48,7 @@ static int _zmq_getsockopt(void *socket, int option_name, void *option_value, si
 
 static int _zmq_recv(void *socket, void *buf, size_t len, int flags) {
     g_assert(socket != NULL);
+    g_assert(buf != NULL);
     int retval = 0;
     do {
         retval = zmq_recv(socket, buf, len, flags);
@@ -54,6 +58,7 @@ static int _zmq_recv(void *socket, void *buf, size_t len, int flags) {
 
 static int _zmq_recvmsg(void *socket, zmq_msg_t *msg, int flags) {
     g_assert(socket != NULL);
+    g_assert(msg != NULL);
     int retval = 0;
     do {
         retval = zmq_recvmsg(socket, msg, flags);
@@ -617,6 +622,7 @@ typedef struct rep_callback_data {
 } rep_callback_data_t;
 
 static void rep_callback_data_free(gpointer data) {
+    g_assert(data != NULL);
     g_slice_free(rep_callback_data_t, data);
 }
 
@@ -723,6 +729,7 @@ typedef struct router_callback_data {
 } router_callback_data_t;
 
 static void router_callback_data_free(gpointer data) {
+    g_assert(data != NULL);
     g_slice_free(router_callback_data_t, data);
 }
 
@@ -730,6 +737,7 @@ static gboolean router_callback(GZmqSource *zmq_source, const guint8 *buf, int l
     g_assert(user_data != NULL);
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_ROUTER);
+    g_assert(len >= 0);
     router_callback_data_t *const pdata = (router_callback_data_t *)user_data;
 
     if (pdata->identity_completed == FALSE) {
@@ -739,9 +747,7 @@ static gboolean router_callback(GZmqSource *zmq_source, const guint8 *buf, int l
             element->buf = g_memdup(buf, len);
             element->len = len;
             pdata->identity_list = g_list_append(pdata->identity_list, element);
-        }
-
-        if (len == 0) {
+        } else if (len == 0) {
             pdata->identity_completed = TRUE;
             pdata->identity_list = g_list_reverse(pdata->identity_list);
         }
@@ -909,17 +915,15 @@ typedef struct req_callback_data {
 } req_callback_data_t;
 
 static void req_callback_data_free(gpointer data) {
-    if (ISNOTNULL(data)) {
-        req_callback_data_t *const pdata = (req_callback_data_t *)data;
-        if (G_LIKELY((pdata->notify != NULL) && (pdata->user_data != NULL))) {
-            pdata->notify(pdata->user_data);
-        }
-        pdata->user_data = NULL;
-        pdata->notify = NULL;
-        g_slice_free(req_callback_data_t, data);
-    } else {
-        g_warning("no data to free");
+    g_assert(data != NULL);
+    
+    req_callback_data_t *const pdata = (req_callback_data_t *)data;
+    if (G_LIKELY((pdata->notify != NULL) && (pdata->user_data != NULL))) {
+        pdata->notify(pdata->user_data);
     }
+    pdata->user_data = NULL;
+    pdata->notify = NULL;
+    g_slice_free(req_callback_data_t, data);
 }
 
 static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
@@ -1162,6 +1166,7 @@ gboolean subscribe_zmq_sub(GZmqSource *zmq_source, const guint8 *filter, int len
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_SUB);
+    g_assert(len >= 0);
 
     if (filter == NULL) {
         filter = (const guint8 *)"";
@@ -1183,6 +1188,7 @@ gboolean unsubscribe_zmq_sub(GZmqSource *zmq_source, const guint8 *filter, int l
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_SUB);
+    g_assert(len >= 0);
 
     if (filter == NULL) {
         filter = (const guint8 *)"";
@@ -1332,6 +1338,7 @@ static void monitor_callback_data_free(gpointer data) {
 static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_monitor_event_t *event, guint32 *value) {
     // The first frame contains an event number (16 bits), and an event value (32 bits) that provides additional data according to the event number.
     if (6 == len) {
+        g_assert(buf != NULL);
         struct {
             guint16 event;
             guint32 value;
