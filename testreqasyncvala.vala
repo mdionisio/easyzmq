@@ -12,13 +12,14 @@ async void mainasync () {
 
         yield req1.SendReq_async (10000, "pippo req1".data, out bufout, out more);
 
-        stdout.printf ("req1: %.*s more: %d\n", bufout.length, (string) bufout, (int) more);
+        stdout.printf ("req1: '%.*s' more: %d\n", bufout.length, (string) bufout, (int) more);
 
         bufout = null;
+        uint8[] bufout_owned = null;
 
-        yield req2.SendReq_async (10000, "pippo req2".data, out bufout, out more);
+        yield req2.SendReqTake_async (10000, "pippo req2".data, out bufout_owned, out more);
 
-        stdout.printf ("req2: %.*s more: %d\n", bufout.length, (string) bufout, (int) more);
+        stdout.printf ("req2: '%.*s' more: %d\n", bufout_owned.length, (string) bufout_owned, (int) more);
     } catch (EasyZmq.Error er) {
         stdout.printf ("error connect\n");
     }
