@@ -8,6 +8,15 @@
 #include <glib-object.h>
 #include <glib.h>
 
+// uncomment next line if you need extra debug
+// #define EASYZMQ_DBG
+
+#ifdef EASYZMQ_DBG
+#define DBG(x, ...) g_debug(x, ##__VA_ARGS__)
+#else
+#define DBG(x, ...)
+#endif
+
 typedef struct _SendReq_asyncData SendReq_asyncData;
 
 struct _SendReq_asyncData {
@@ -27,6 +36,7 @@ static gboolean _gzmqsourcecallback_easy(GZmqSource *zmq_source, const guint8 *b
 static void SendReq_async_data_free(gpointer _data) {
     g_assert(_data != NULL);
     SendReq_asyncData *_data_ = _data;
+    DBG("async end: %p", _data_);
     g_zmq_source_unref(_data_->req);
     g_slice_free(SendReq_asyncData, _data_);
 }
@@ -36,7 +46,12 @@ void send_zmq_req_async(GZmqSource *req, guint timeoutms, const guint8 *buf, int
     g_assert(_callback_ != NULL);
 
     SendReq_asyncData *_data_ = g_slice_new0(SendReq_asyncData);
+    g_assert(_data_ != NULL);
+    DBG("async start: %p", _data_);
+
     _data_->_async_result = g_simple_async_result_new(NULL, _callback_, _user_data_, send_zmq_req_async);
+    g_assert(_data_->_async_result != NULL);
+
     g_simple_async_result_set_op_res_gpointer(_data_->_async_result, _data_, SendReq_async_data_free);
     g_zmq_source_ref(req);
     _data_->req = req;
@@ -57,7 +72,12 @@ void send_zmq_req_take_async(GZmqSource *req, guint timeoutms, guint8 *buf, int 
     g_assert(_callback_ != NULL);
 
     SendReq_asyncData *_data_ = g_slice_new0(SendReq_asyncData);
+    g_assert(_data_ != NULL);
+    DBG("async start: %p", _data_);
+
     _data_->_async_result = g_simple_async_result_new(NULL, _callback_, _user_data_, send_zmq_req_async);
+    g_assert(_data_->_async_result != NULL);
+
     g_simple_async_result_set_op_res_gpointer(_data_->_async_result, _data_, SendReq_async_data_free);
     g_zmq_source_ref(req);
     _data_->req = req;
@@ -97,6 +117,8 @@ void send_zmq_req_finish(GZmqSource *req, GAsyncResult *_res_, const guint8 **bu
 }
 
 static gboolean _gzmqsourcecallback_easy(GZmqSource *zmq_source, const guint8 *buf, int buf_length, gboolean more, gpointer self) {
+    g_assert(self != NULL);
+
     SendReq_asyncData *_data_ = (SendReq_asyncData *)self;
 
     gboolean result = FALSE;
@@ -107,8 +129,8 @@ static gboolean _gzmqsourcecallback_easy(GZmqSource *zmq_source, const guint8 *b
     }
     _data_->more = more;
 
+    g_assert(_data_->_async_result != NULL);
     g_simple_async_result_complete(_data_->_async_result);
-
     g_object_unref(_data_->_async_result);
 
     result = TRUE;

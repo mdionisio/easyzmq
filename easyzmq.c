@@ -6,6 +6,15 @@
 #include <string.h>
 #include <zmq.h>
 
+// uncomment next line if you need extra debug
+// #define EASYZMQ_DBG
+
+#ifdef EASYZMQ_DBG
+#define DBG(x, ...) g_debug(x, ##__VA_ARGS__)
+#else
+#define DBG(x, ...)
+#endif
+
 #define clean_zmq_strerror(x) ((x) == 0 ? "None" : zmq_strerror(x))
 #define clean_zmq_errno() clean_zmq_strerror(zmq_errno())
 
@@ -215,11 +224,12 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                         int more = 0;
                         size_t more_len = sizeof(more);
                         assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
-
+                        DBG("data recevied -> call callback (buffer: %p)", self->msg_receive);
                         ret = zcallback(self, 
                                         (const guint8 *)self->msg_receive, 
                                         rc, (more != 0) ? TRUE : FALSE, 
                                         user_data);
+                        DBG("data recevied -> call callback return:%d (buffer: %p)", (int)ret, self->msg_receive);
                     } else {
                         g_info("receive message when there is no subscription on it");
 
@@ -231,6 +241,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                 } else {
                     zmq_msg_t msg;
                     if (zmq_msg_init(&msg) == 0) {
+                        DBG("data recevied create msg (msg: %p)", &msg);
                         const int size = _zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                         gboolean ret = FALSE;
                         if (size < 0) {
@@ -243,15 +254,18 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                             }
                         } else {
                             if (ISNOTNULL(zcallback)) {
+                                DBG("data recevied -> call callback (msg: %p)", &msg);
                                 ret = zcallback(self, 
                                     (const guint8 *)zmq_msg_data(&msg), 
                                     (int)zmq_msg_size(&msg), // I think that this cast is always valid and also the variable size can be use
                                     zmq_msg_more(&msg), user_data);
+                                DBG("data recevied -> call callback return :%d (msg: %p)", (int)ret, &msg);
                             } else {
                                 g_info("receive message when there is no subscription on it");
                                 ret = G_SOURCE_REMOVE;
                             }
                         }
+                        DBG("data recevied clear msg (msg: %p)", &msg);
                         assert_errno(zmq_msg_close(&msg) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
 
                         if (ret == G_SOURCE_REMOVE) {
