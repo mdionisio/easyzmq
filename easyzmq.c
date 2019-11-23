@@ -201,27 +201,31 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
 
                 if (ISNOTNULL(self->msg_receive)) {
                     int rc = _zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
+                    gboolean ret = FALSE;
                     if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
                         g_info("error receiving zmq message (%d,%zu): %s (%d)", rc, self->size_receive, clean_errno(), zmq_errno());
                         if (ISNOTNULL(zcallback)) {
-                            return zcallback(self, NULL, 0, FALSE, user_data);
+                            ret = zcallback(self, NULL, 0, FALSE, user_data);
                         } else {
                             g_info("receive error when there is no subscription on it");
-                            return G_SOURCE_REMOVE;
+                            ret = G_SOURCE_REMOVE;
                         }
                     } else if (ISNOTNULL(zcallback)) {
                         int more = 0;
                         size_t more_len = sizeof(more);
                         assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_errno(), zmq_errno());
 
-                        gboolean ret = zcallback(self, (const guint8 *)self->msg_receive, rc, (more != 0) ? TRUE : FALSE, user_data);
 
-                        if (ret == G_SOURCE_REMOVE) {
-                            return G_SOURCE_REMOVE;
-                        }
+                        ret = zcallback(self, 
+                                        (const guint8 *)self->msg_receive, 
+                                        rc, (more != 0) ? TRUE : FALSE, 
+                                        user_data);
                     } else {
                         g_info("receive message when there is no subscription on it");
 
+                        ret = G_SOURCE_REMOVE;
+                    }
+                    if (ret == G_SOURCE_REMOVE) {
                         return G_SOURCE_REMOVE;
                     }
                 } else {
