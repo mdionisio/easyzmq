@@ -495,7 +495,7 @@ static GZmqSource *g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMa
 
             source->fd = fd;
 
-            if (G_UNLIKELY(source->fd > 0)) {
+            if (G_UNLIKELY(source->fd >= 0)) {
                 g_source_set_callback((GSource *)source, (GSourceFunc)fake_callback, NULL, NULL);
                 g_source_attach((GSource *)source, l_context);
                 g_source_unref((GSource *)source);
