@@ -81,6 +81,20 @@ easyzmq_socket_t g_easyzmq_get_socket_type(GZmqSource *self);
 void g_easyzmq_set_blocking_send(GZmqSource *self, gboolean blocking);
 gboolean g_easyzmq_get_blocking_send(GZmqSource *self);
 
+/** zmq socket options (option is a ZMQ_* constant of zmq.h). On error the GError code is the zmq errno. */
+gboolean g_easyzmq_set_option_int(GZmqSource *self, int option, int value, GError **error);
+gboolean g_easyzmq_get_option_int(GZmqSource *self, int option, int *value, GError **error);
+gboolean g_easyzmq_set_option_int64(GZmqSource *self, int option, gint64 value, GError **error);
+gboolean g_easyzmq_get_option_int64(GZmqSource *self, int option, gint64 *value, GError **error);
+gboolean g_easyzmq_set_option_bytes(GZmqSource *self, int option, const guint8 *value, gsize size, GError **error);
+gboolean g_easyzmq_set_option_string(GZmqSource *self, int option, const gchar *value, GError **error);
+gchar *g_easyzmq_get_option_string(GZmqSource *self, int option, GError **error) G_GNUC_MALLOC;
+
+/** The raw zmq socket (still owned by the source). Use it only for what easyzmq does not
+ * offer: send/receive on it bypass the source and break its state.
+ */
+void *g_easyzmq_get_socket(GZmqSource *self);
+
 typedef void (*GZmqMonitorFunc)(GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len);
 GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cp) G_GNUC_MALLOC;
 

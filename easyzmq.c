@@ -675,6 +675,75 @@ gboolean g_easyzmq_get_blocking_send(GZmqSource *self) {
     return (self->send_flags & ZMQ_DONTWAIT) ? FALSE : TRUE;
 }
 
+void *g_easyzmq_get_socket(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, NULL);
+    return self->zmq_owned_socket;
+}
+
+static gboolean _set_option(GZmqSource *self, int option, const void *value, size_t size, GError **error) {
+    g_return_val_if_fail(self != NULL, FALSE);
+    g_return_val_if_fail(self->zmq_owned_socket != NULL, FALSE);
+    if (_zmq_setsockopt(self->zmq_owned_socket, option, value, size) != 0) {
+        const int zerrno = zmq_errno();
+        g_set_error(error, EASY_ZMQ_ERROR, zerrno, "easyzmq errno: %d %s setting option %d", zerrno, clean_zmq_strerror(zerrno), option);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static gboolean _get_option(GZmqSource *self, int option, void *value, size_t *size, GError **error) {
+    g_return_val_if_fail(self != NULL, FALSE);
+    g_return_val_if_fail(self->zmq_owned_socket != NULL, FALSE);
+    if (_zmq_getsockopt(self->zmq_owned_socket, option, value, size) != 0) {
+        const int zerrno = zmq_errno();
+        g_set_error(error, EASY_ZMQ_ERROR, zerrno, "easyzmq errno: %d %s getting option %d", zerrno, clean_zmq_strerror(zerrno), option);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+gboolean g_easyzmq_set_option_int(GZmqSource *self, int option, int value, GError **error) {
+    return _set_option(self, option, &value, sizeof(value), error);
+}
+
+gboolean g_easyzmq_get_option_int(GZmqSource *self, int option, int *value, GError **error) {
+    g_return_val_if_fail(value != NULL, FALSE);
+    size_t size = sizeof(*value);
+    return _get_option(self, option, value, &size, error);
+}
+
+gboolean g_easyzmq_set_option_int64(GZmqSource *self, int option, gint64 value, GError **error) {
+    int64_t v = (int64_t)value;
+    return _set_option(self, option, &v, sizeof(v), error);
+}
+
+gboolean g_easyzmq_get_option_int64(GZmqSource *self, int option, gint64 *value, GError **error) {
+    g_return_val_if_fail(value != NULL, FALSE);
+    int64_t v = 0;
+    size_t size = sizeof(v);
+    const gboolean ret = _get_option(self, option, &v, &size, error);
+    *value = (gint64)v;
+    return ret;
+}
+
+gboolean g_easyzmq_set_option_bytes(GZmqSource *self, int option, const guint8 *value, gsize size, GError **error) {
+    return _set_option(self, option, (value != NULL) ? (const void *)value : (const void *)"", (value != NULL) ? size : 0, error);
+}
+
+gboolean g_easyzmq_set_option_string(GZmqSource *self, int option, const gchar *value, GError **error) {
+    return _set_option(self, option, (value != NULL) ? value : "", (value != NULL) ? strlen(value) : 0, error);
+}
+
+gchar *g_easyzmq_get_option_string(GZmqSource *self, int option, GError **error) {
+    gchar buffer[256];
+    size_t size = sizeof(buffer);
+    if (!_get_option(self, option, buffer, &size, error)) {
+        return NULL;
+    }
+    // zmq string options include the terminating NUL
+    return g_strndup(buffer, size);
+}
+
 static void _free_heap_msg(gpointer data) {
     zmq_msg_t *const msg = (zmq_msg_t *)data;
     assert_errno(zmq_msg_close(msg) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());

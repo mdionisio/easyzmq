@@ -49,6 +49,47 @@ namespace EasyZmq {
         UNKNOWN
     }
 
+    // most used zmq socket options (any ZMQ_* value can be used casting an int)
+    [CCode (cname = "int", cprefix = "ZMQ_", has_type_id = false, cheader_filename = "zmq.h")]
+    public enum Option {
+        AFFINITY,
+        ROUTING_ID,
+        IDENTITY,
+        LINGER,
+        RECONNECT_IVL,
+        RECONNECT_IVL_MAX,
+        BACKLOG,
+        MAXMSGSIZE,
+        SNDHWM,
+        RCVHWM,
+        SNDBUF,
+        RCVBUF,
+        SNDTIMEO,
+        RCVTIMEO,
+        IPV6,
+        IMMEDIATE,
+        CONFLATE,
+        TCP_KEEPALIVE,
+        TCP_KEEPALIVE_IDLE,
+        TCP_KEEPALIVE_CNT,
+        TCP_KEEPALIVE_INTVL,
+        ROUTER_MANDATORY,
+        XPUB_VERBOSE,
+        PLAIN_SERVER,
+        PLAIN_USERNAME,
+        PLAIN_PASSWORD,
+        CURVE_SERVER,
+        CURVE_PUBLICKEY,
+        CURVE_SECRETKEY,
+        CURVE_SERVERKEY,
+        ZAP_DOMAIN,
+        HEARTBEAT_IVL,
+        HEARTBEAT_TIMEOUT,
+        HEARTBEAT_TTL,
+        LAST_ENDPOINT,
+        TYPE
+    }
+
     [CCode (cname = "easy_zmq_init")]
     public void Init();
 
@@ -95,6 +136,30 @@ namespace EasyZmq {
             [CCode (cname = "g_easyzmq_get_blocking_send")] get;
             [CCode (cname = "g_easyzmq_set_blocking_send")] set;
         }
+
+        [CCode (cname = "g_easyzmq_set_option_int")]
+        public bool SetOptionInt (EasyZmq.Option option, int value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_get_option_int")]
+        public bool GetOptionInt (EasyZmq.Option option, out int value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_set_option_int64")]
+        public bool SetOptionInt64 (EasyZmq.Option option, int64 value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_get_option_int64")]
+        public bool GetOptionInt64 (EasyZmq.Option option, out int64 value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_set_option_bytes")]
+        public bool SetOptionBytes (EasyZmq.Option option, uint8[] value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_set_option_string")]
+        public bool SetOptionString (EasyZmq.Option option, string value) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_get_option_string")]
+        public string GetOptionString (EasyZmq.Option option) throws EasyZmq.Error;
+
+        [CCode (cname = "g_easyzmq_get_socket")]
+        public void* GetSocket ();
 
         [CCode (cname = "GZmqMonitorFunc", has_target = false)]
         public delegate void monitor_callback (EasyZmq.ZmqSource zmq_source, EasyZmq.monitor_event event, uint32 value, uint8[] address);

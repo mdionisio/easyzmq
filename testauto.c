@@ -499,6 +499,32 @@ static void test_bytes(void) {
     }
 }
 
+// ---- socket options
+
+static void test_options(void) {
+    GZmqSource *sub = g_zmq_source_sub_new(0, NULL);
+    GError *error = NULL;
+    int value = 0;
+    g_assert(g_easyzmq_set_option_int(sub, ZMQ_RCVHWM, 77, &error));
+    g_assert_no_error(error);
+    g_assert(g_easyzmq_get_option_int(sub, ZMQ_RCVHWM, &value, &error));
+    g_assert_cmpint(value, ==, 77);
+    gint64 maxsize = 0;
+    g_assert(g_easyzmq_set_option_int64(sub, ZMQ_MAXMSGSIZE, 4096, &error));
+    g_assert(g_easyzmq_get_option_int64(sub, ZMQ_MAXMSGSIZE, &maxsize, &error));
+    g_assert_cmpint(maxsize, ==, 4096);
+    g_assert(g_easyzmq_bind(sub, "inproc://options", NULL));
+    gchar *endpoint = g_easyzmq_get_option_string(sub, ZMQ_LAST_ENDPOINT, &error);
+    g_assert_cmpstr(endpoint, ==, "inproc://options");
+    g_free(endpoint);
+    // invalid option
+    g_assert(!g_easyzmq_set_option_int(sub, 99999, 1, &error));
+    g_assert_error(error, EASY_ZMQ_ERROR, EINVAL);
+    g_clear_error(&error);
+    g_assert(g_easyzmq_get_socket(sub) != NULL);
+    g_zmq_source_close(&sub);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -516,6 +542,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/task-request", test_task_request);
     g_test_add_func("/easyzmq/task-receive", test_task_receive);
     g_test_add_func("/easyzmq/bytes", test_bytes);
+    g_test_add_func("/easyzmq/options", test_options);
 
     const int ret = g_test_run();
 
