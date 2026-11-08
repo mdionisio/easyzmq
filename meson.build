@@ -20,6 +20,17 @@ easyzmq = library('easyzmq',
 	include_directories : inc,
 	dependencies : [zmqdep, glibdep, giodep])
 
+# to use easyzmq as meson subproject: dependency('easyzmq', fallback: ['easyzmq', 'easyzmq_dep'])
+easyzmq_dep = declare_dependency(
+	link_with : easyzmq,
+	include_directories : inc,
+	dependencies : [glibdep, giodep])
+
+testauto = executable('testauto',
+	['testauto.c'],
+	dependencies : [easyzmq_dep])
+test('easyzmq', testauto, timeout : 60)
+
 executable('testzmq', 
 	['test.c'], 
 	include_directories : inc,
