@@ -88,9 +88,8 @@ static int _zmq_msg_send(zmq_msg_t *msg, void *socket, int flags) {
 }
 
 static guint get_unique(void) {
-    static volatile guint counter = 0U;
-    g_atomic_int_inc(&counter);
-    return counter;
+    static gint counter = 0;
+    return (guint)g_atomic_int_add(&counter, 1);
 }
 
 static void *zmq_context = NULL;
@@ -160,7 +159,11 @@ static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
         }
         int zevents = 0;
         size_t zevents_len = sizeof(zevents);
-        assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
+        if (_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) != 0) {
+            // ETERM: context terminated while the source is still alive
+            assert_errno(zmq_errno() == ETERM, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
+            return FALSE;
+        }
 
         ret = (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
 
@@ -179,7 +182,10 @@ static gboolean _g_zmq_source_check(GSource *source) {
         gboolean ret = FALSE;
         int zevents = 0;
         size_t zevents_len = sizeof(zevents);
-        assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) == 0, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
+        if (_zmq_getsockopt(self->zmq_owned_socket, ZMQ_EVENTS, &zevents, &zevents_len) != 0) {
+            assert_errno(zmq_errno() == ETERM, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
+            return FALSE;
+        }
 
         ret = (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
 
@@ -739,7 +745,7 @@ gboolean send_zmq_rep_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestro
     _pollfdOn(zmq_source);
 
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), errno);
+    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
     int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
     if (G_UNLIKELY(r == -1)) {
@@ -1270,6 +1276,7 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(buf != NULL);
     g_assert(len > 0);
+    g_assert(zmq_source->type == EASY_ZMQ_PAIR);
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
@@ -1349,10 +1356,14 @@ static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_mo
 static gboolean monitor_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
     g_assert(zmq_source != NULL);
     g_assert(user_data != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
 
     monitor_callback_data_t *pdata = (monitor_callback_data_t *)user_data;
+
+    if (ISNULL(buf)) {
+        g_info("monitor receive error");
+        pdata->state = 0;
+        return TRUE;
+    }
 
     if (more) {
         g_assert(pdata->state == 0);
@@ -1382,12 +1393,16 @@ GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) {
     g_assert(zmq_source->zmq_owned_socket != NULL);
     if (ISNULL(zmq_source->zmq_source_monitor)) {
         guint unique = get_unique();
-        gchar address[32];
-        g_snprintf(address, G_N_ELEMENTS(address), "inproc://%u", unique);
+        gchar address[48];
+        g_snprintf(address, G_N_ELEMENTS(address), "inproc://easyzmq-monitor-%u", unique);
 
         if (zmq_socket_monitor(zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ATTACHED) == 0) {
             zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context((GSource *)zmq_source));
-            g_assert(zmq_source->zmq_owned_socket != NULL);
+            if (ISNULL(zmq_source->zmq_source_monitor)) {
+                g_warning("error creating monitor pair socket");
+                zmq_socket_monitor(zmq_source->zmq_owned_socket, NULL, 0);
+                return NULL;
+            }
 
             monitor_callback_data_t *const pdata = g_slice_new0(monitor_callback_data_t);
             g_assert(pdata != NULL);
