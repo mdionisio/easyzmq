@@ -164,8 +164,6 @@ void *get_zmq_context(void) {
  **/
 G_DEFINE_QUARK(easyzmq - error - quark, easyzmq_error)
 
-
-
 static void _pollfdOn(GZmqSource *source);
 static void _pollfdOff(GZmqSource *source);
 
@@ -221,7 +219,7 @@ static gboolean _g_zmq_source_check(GSource *source) {
 static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gpointer user_data) {
     g_assert(source != NULL);
     GZmqSource *const self = (GZmqSource *)source;
-    GZmqSourceFunc const zcallback = (GZmqSourceFunc)callback;
+    GZmqSourceFunc const zcallback = (GZmqSourceFunc)(void *)callback;
 
     for (;;) {
         if (g_source_is_destroyed(source)) {
@@ -309,9 +307,9 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                                 DBG("data recevied -> call callback (msg: %p)", &msg);
                                 self->current_msg = &msg;
                                 ret = zcallback(self,
-                                    (const guint8 *)zmq_msg_data(&msg),
-                                    (int)zmq_msg_size(&msg), // I think that this cast is always valid and also the variable size can be use
-                                    zmq_msg_more(&msg), user_data);
+                                                (const guint8 *)zmq_msg_data(&msg),
+                                                (int)zmq_msg_size(&msg), // I think that this cast is always valid and also the variable size can be use
+                                                zmq_msg_more(&msg), user_data);
                                 self->current_msg = NULL;
                                 DBG("data recevied -> call callback return :%d (msg: %p)", (int)ret, &msg);
                             } else {
@@ -1026,7 +1024,7 @@ gboolean recv_zmq_rep(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_d
     pdata->notify = notify;
     pdata->callback = cb;
 
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)rep_callback, pdata, rep_callback_data_free);
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)rep_callback, pdata, rep_callback_data_free);
 
     return TRUE;
 }
@@ -1137,7 +1135,7 @@ gboolean recv_zmq_router(GZmqSource *zmq_source, GZmqSourceIdentityFunc cb, gpoi
     pdata->identity_list = NULL;
     pdata->identity_completed = FALSE;
 
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)router_callback, pdata, router_callback_data_free);
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)router_callback, pdata, router_callback_data_free);
 
     return TRUE;
 }
@@ -1148,10 +1146,10 @@ void destroy_identity(void *pdata) {
     g_assert(identity != NULL);
 
     while (ISNOTNULL(identity)) {
-        GList * const identity_element = identity;
+        GList *const identity_element = identity;
         g_assert(identity_element->data != NULL);
         identity = g_list_remove_link(identity, identity_element);
-        idenity_list_element_t * const elem = (idenity_list_element_t *)(identity_element->data);
+        idenity_list_element_t *const elem = (idenity_list_element_t *)(identity_element->data);
         g_assert(elem != NULL);
         g_free(elem->buf);
         g_slice_free(idenity_list_element_t, identity_element->data);
@@ -1472,7 +1470,7 @@ gboolean recv_zmq_sub(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_d
         cb = fake_callback;
     }
 
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)cb, user_data, notify);
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)cb, user_data, notify);
 
     return TRUE;
 }
@@ -1505,7 +1503,7 @@ gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_
     if (cb == NULL) {
         cb = fake_callback;
     }
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)cb, user_data, notify);
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)cb, user_data, notify);
 
     return TRUE;
 }
