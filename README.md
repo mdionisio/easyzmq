@@ -137,6 +137,8 @@ See `testasyncvala.vala` (self contained, inproc), `testrepasyncvala.vala`,
 
 **Threads**
 - A source has to be used only from the thread running its `GMainContext`.
+- `g_zmq_source_ref`/`g_zmq_source_unref` are atomic: a worker thread can keep a reference and
+  queue a send on the main loop (e.g. with `g_idle_add`), releasing the reference from there.
 
 ## Examples
 

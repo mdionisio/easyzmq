@@ -683,6 +683,38 @@ static void test_monitor(void) {
     monitor_events = NULL;
 }
 
+// ---- reference count shared between threads
+
+#define REF_THREADS 4
+#define REF_LOOPS 200000
+
+static gpointer ref_unref_thread(gpointer data) {
+    GZmqSource *source = data;
+    for (int i = 0; i < REF_LOOPS; i++) {
+        g_zmq_source_unref(g_zmq_source_ref(source));
+    }
+    return NULL;
+}
+
+// references can be taken and released from any thread (e.g. a worker thread that queues a send
+// on the main loop): the reference count has to be atomic
+static void test_ref_unref_threads(void) {
+    GZmqSource *pub = g_zmq_source_pub_new(NULL);
+    g_assert(pub != NULL);
+
+    GThread *threads[REF_THREADS];
+    for (int i = 0; i < REF_THREADS; i++) {
+        threads[i] = g_thread_new("ref", ref_unref_thread, pub);
+    }
+    for (int i = 0; i < REF_THREADS; i++) {
+        g_thread_join(threads[i]);
+    }
+
+    // a lost increment destroys the source before the last unref
+    g_assert(!g_source_is_destroyed((GSource *)pub));
+    g_zmq_source_unref(pub);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -704,6 +736,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/types", test_types);
     g_test_add_func("/easyzmq/multipart", test_multipart);
     g_test_add_func("/easyzmq/monitor", test_monitor);
+    g_test_add_func("/easyzmq/ref-unref-threads", test_ref_unref_threads);
 
     const int ret = g_test_run();
 

@@ -20,7 +20,7 @@ struct _ZmqSource {
     void *zmq_owned_socket;
     void *msg_receive;
     size_t size_receive;
-    gint ref_count;
+    gint ref_count; // atomic
     easyzmq_socket_t type;
     int send_flags; // ZMQ_DONTWAIT (default) or 0 (blocking send)
     GZmqSource *zmq_source_monitor;

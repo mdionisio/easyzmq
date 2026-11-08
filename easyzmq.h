@@ -247,6 +247,9 @@ static inline void g_zmq_source_close(GZmqSource **self) {
     }
 }
 
+/** The reference count is atomic: references can be taken and released from any thread, while the
+ * source is used (send/receive) only from the thread of its main context.
+ */
 GZmqSource *g_zmq_source_ref(GZmqSource *self);
 
 void g_zmq_source_unref(GZmqSource *self);

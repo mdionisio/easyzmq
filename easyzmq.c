@@ -420,11 +420,13 @@ static gboolean fake_callback(G_GNUC_UNUSED GZmqSource *zmq_source, G_GNUC_UNUSE
     return G_SOURCE_CONTINUE;
 }
 
+// The reference count is atomic: a reference can be taken and released from any thread
+// (e.g. a worker thread that queues a send on the main loop).
 GZmqSource *g_zmq_source_ref(GZmqSource *self) {
     g_return_val_if_fail(self != NULL, NULL);
-    g_warn_if_fail(self->ref_count != 0);
+    g_warn_if_fail(g_atomic_int_get(&self->ref_count) > 0);
 
-    self->ref_count++;
+    g_atomic_int_inc(&self->ref_count);
 
     g_source_ref((GSource *)self);
     return self;
@@ -432,15 +434,13 @@ GZmqSource *g_zmq_source_ref(GZmqSource *self) {
 
 void g_zmq_source_unref(GZmqSource *self) {
     if (ISNOTNULL(self)) {
-        if (self->ref_count > 0) {
-            self->ref_count--;
-            if (self->ref_count == 0) {
-                g_source_destroy((GSource *)self);
-            } else {
-                g_source_unref((GSource *)self);
-            }
-        } else {
+        if (g_atomic_int_get(&self->ref_count) <= 0) {
             g_warn_if_reached();
+        } else if (g_atomic_int_dec_and_test(&self->ref_count)) {
+            // the last reference is the one of the main context
+            g_source_destroy((GSource *)self);
+        } else {
+            g_source_unref((GSource *)self);
         }
     }
 }
