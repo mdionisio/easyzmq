@@ -453,8 +453,11 @@ gboolean g_easyzmq_disconnect(GZmqSource *source, const char *addr, GError **err
 
 static void _pollfdOn(GZmqSource *source) {
     g_assert(source != NULL);
-    g_assert(source->fd > 0);
-    g_assert(source->fdtag == NULL);
+    g_assert(source->fd >= 0);
+
+    if (ISNOTNULL(source->fdtag)) {
+        return; // already polled
+    }
 
     source->fdtag = g_source_add_unix_fd((GSource *)source, source->fd, G_IO_IN | G_IO_PRI | G_IO_ERR | G_IO_HUP | G_IO_NVAL);
 
