@@ -38,6 +38,17 @@ namespace EasyZmq {
         MONITOR_STOPPED;
     }
 
+    [CCode (cname = "easyzmq_socket_t", cprefix = "EASY_ZMQ_", has_type_id = false)]
+    public enum SocketType {
+        PUB,
+        SUB,
+        REQ,
+        REP,
+        PAIR,
+        ROUTER,
+        UNKNOWN
+    }
+
     [CCode (cname = "easy_zmq_init")]
     public void Init();
 
@@ -64,6 +75,23 @@ namespace EasyZmq {
 
         [CCode (cname = "g_zmq_source_pair_new")]
         public ZmqSource.Pair (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "g_zmq_source_router_new")]
+        public ZmqSource.Router (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        // take the ownership of the zmq socket
+        [CCode (cname = "g_zmq_source_new_from_socket")]
+        public ZmqSource.FromSocket (void* zmq_socket, size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        public EasyZmq.SocketType socket_type {
+            [CCode (cname = "g_easyzmq_get_socket_type")] get;
+        }
+
+        // default false: send never blocks the main loop
+        public bool blocking_send {
+            [CCode (cname = "g_easyzmq_get_blocking_send")] get;
+            [CCode (cname = "g_easyzmq_set_blocking_send")] set;
+        }
 
         [CCode (cname = "GZmqMonitorFunc", has_target = false)]
         public delegate void monitor_callback (EasyZmq.ZmqSource zmq_source, EasyZmq.monitor_event event, uint32 value, uint8[] address);

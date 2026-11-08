@@ -4,6 +4,7 @@
 
 #include <glib.h>
 #include <string.h>
+#include <zmq.h>
 
 static GMainLoop *loop = NULL;
 
@@ -258,6 +259,57 @@ static void test_close_in_callback(void) {
     g_zmq_source_close(&pub);
 }
 
+// ---- not blocking send (default) and blocking send
+
+static void test_dontwait(void) {
+    GZmqSource *pair = g_zmq_source_pair_new(0, NULL);
+    g_assert(g_easyzmq_bind(pair, "inproc://dontwait", NULL));
+    g_assert(!g_easyzmq_get_blocking_send(pair));
+    // no peer connected: with the old blocking send this call never returned
+    const gint64 start = g_get_monotonic_time();
+    g_assert(!send_zmq_pair(pair, (const guint8 *)"x", 1));
+    g_assert_cmpint(g_get_monotonic_time() - start, <, G_USEC_PER_SEC);
+    g_zmq_source_close(&pair);
+}
+
+// ---- source created from a user socket
+
+static int from_socket_received = 0;
+
+static gboolean from_socket_cb(G_GNUC_UNUSED GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+    g_assert(buf != NULL);
+    g_assert_cmpint(len, ==, 3);
+    from_socket_received++;
+    g_main_loop_quit(loop);
+    return G_SOURCE_CONTINUE;
+}
+
+static void test_from_socket(void) {
+    void *raw = zmq_socket(get_zmq_context(), ZMQ_PAIR);
+    g_assert(raw != NULL);
+    int hwm = 10;
+    g_assert(zmq_setsockopt(raw, ZMQ_RCVHWM, &hwm, sizeof(hwm)) == 0);
+    GZmqSource *a = g_zmq_source_new_from_socket(raw, 0, NULL);
+    g_assert(a != NULL);
+    g_assert(g_easyzmq_get_socket_type(a) == EASY_ZMQ_PAIR);
+    g_assert(g_easyzmq_bind(a, "inproc://fromsocket", NULL));
+    g_assert(recv_zmq_pair(a, from_socket_cb, NULL, NULL));
+
+    GZmqSource *b = g_zmq_source_pair_new(0, NULL);
+    g_assert(g_easyzmq_connect(b, "inproc://fromsocket", NULL));
+    g_assert(send_zmq_pair(b, (const guint8 *)"abc", 3));
+    run_loop_ms(2000);
+    g_assert_cmpint(from_socket_received, ==, 1);
+
+    // not supported socket type: closed and NULL returned
+    void *raw2 = zmq_socket(get_zmq_context(), ZMQ_STREAM);
+    g_assert(raw2 != NULL);
+    g_assert(g_zmq_source_new_from_socket(raw2, 0, NULL) == NULL);
+
+    g_zmq_source_close(&b);
+    g_zmq_source_close(&a);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -269,6 +321,8 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/req-strict-resend", test_strict_resend);
     g_test_add_func("/easyzmq/router", test_router);
     g_test_add_func("/easyzmq/close-in-callback", test_close_in_callback);
+    g_test_add_func("/easyzmq/dontwait", test_dontwait);
+    g_test_add_func("/easyzmq/from-socket", test_from_socket);
 
     const int ret = g_test_run();
 

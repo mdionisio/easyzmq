@@ -28,7 +28,7 @@ easyzmq_dep = declare_dependency(
 
 testauto = executable('testauto',
 	['testauto.c'],
-	dependencies : [easyzmq_dep])
+	dependencies : [easyzmq_dep, zmqdep])
 test('easyzmq', testauto, timeout : 60)
 
 executable('testzmq', 

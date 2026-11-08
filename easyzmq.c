@@ -136,13 +136,12 @@ struct _ZmqSource {
     size_t size_receive;
     gint ref_count;
     easyzmq_socket_t type;
+    int send_flags; // ZMQ_DONTWAIT (default) or 0 (blocking send)
     GZmqSource *zmq_source_monitor;
     gpointer user_data;
     GDestroyNotify destroy_user_data;
 };
 
-//#define ZMQ_SEND_FLAGS ZMQ_DONTWAIT
-#define ZMQ_SEND_FLAGS 0
 
 static void _pollfdOn(GZmqSource *source);
 static void _pollfdOff(GZmqSource *source);
@@ -498,156 +497,148 @@ static void _pollfdOff(GZmqSource *source) {
     }
 }
 
+static easyzmq_socket_t _easyzmq_type_from_zmq(int zmq_type) {
+    switch (zmq_type) {
+    case ZMQ_PUB:
+        return EASY_ZMQ_PUB;
+    case ZMQ_SUB:
+        return EASY_ZMQ_SUB;
+    case ZMQ_REQ:
+        return EASY_ZMQ_REQ;
+    case ZMQ_REP:
+        return EASY_ZMQ_REP;
+    case ZMQ_PAIR:
+        return EASY_ZMQ_PAIR;
+    case ZMQ_ROUTER:
+        return EASY_ZMQ_ROUTER;
+    default:
+        return EASY_ZMQ_UNKNOWN;
+    }
+}
+
+// take the ownership of l_zmq_socket (closed also in case of error)
 static GZmqSource *g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMainContext *l_context) {
     g_assert(l_zmq_socket != NULL);
-    g_assert(zmq_context != NULL);
     if (ISNULL(l_context)) {
         l_context = g_main_context_default();
     }
     g_assert(l_context != NULL);
 
-    GZmqSource *source = (GZmqSource *)g_source_new(&_g_zmq_source_funcs, sizeof(GZmqSource));
-    if (source == NULL) {
+    int zmq_type = -1;
+    size_t zmq_type_len = sizeof(zmq_type);
+    if (_zmq_getsockopt(l_zmq_socket, ZMQ_TYPE, &zmq_type, &zmq_type_len) != 0) {
+        g_info("GZmqSource create error: %s", clean_zmq_errno());
         assert_errno(zmq_close(l_zmq_socket) == 0, "error %s[%d] on zmq_close", clean_zmq_errno(), zmq_errno());
+        return NULL;
+    }
+    const easyzmq_socket_t type = _easyzmq_type_from_zmq(zmq_type);
+    if (type == EASY_ZMQ_UNKNOWN) {
+        g_info("GZmqSource create error: zmq socket type %d not supported", zmq_type);
+        assert_errno(zmq_close(l_zmq_socket) == 0, "error %s[%d] on zmq_close", clean_zmq_errno(), zmq_errno());
+        return NULL;
+    }
+
+    GZmqSource *source = (GZmqSource *)g_source_new(&_g_zmq_source_funcs, sizeof(GZmqSource));
+    g_assert(source != NULL);
+
+    source->zmq_owned_socket = l_zmq_socket;
+    source->type = type;
+    source->send_flags = ZMQ_DONTWAIT; // never block the main loop
+    source->fdtag = NULL;
+    source->zmq_source_monitor = NULL;
+    source->fd = -1;
+    source->ref_count = 1;
+
+    if ((max_mem_size > 0) && (type != EASY_ZMQ_PUB)) {
+        int64_t max_msg_size = (int64_t)max_mem_size;
+        if (_zmq_setsockopt(l_zmq_socket, ZMQ_MAXMSGSIZE, &max_msg_size, sizeof(max_msg_size)) != 0) {
+            g_warning("GZmqSource error setting max message size %s", clean_zmq_errno());
+        }
+        source->msg_receive = g_malloc0(max_mem_size);
+        source->size_receive = max_mem_size;
     } else {
-        source->zmq_owned_socket = l_zmq_socket;
-        source->type = EASY_ZMQ_UNKNOWN;
+        source->msg_receive = NULL;
+        source->size_receive = 0;
+    }
 
-        if (max_mem_size > 0) {
-            {
-                int64_t max_msg_size = (int64_t)max_mem_size;
-                if (_zmq_setsockopt(l_zmq_socket, ZMQ_MAXMSGSIZE, &max_msg_size, sizeof(max_msg_size)) != 0) {
-                    g_warning("GZmqSource error setting max message size %s", clean_zmq_errno());
-                }
-            }
-            source->msg_receive = g_malloc0(max_mem_size);
-            source->size_receive = max_mem_size;
-        } else {
-            source->msg_receive = NULL;
-            source->size_receive = 0;
-        }
-        source->fdtag = NULL;
-        source->zmq_source_monitor = NULL;
-        source->fd = -1;
-        source->ref_count = 1;
+    int fd = -1;
+    size_t fd_len = sizeof(fd);
+    if ((_zmq_getsockopt(source->zmq_owned_socket, ZMQ_FD, &fd, &fd_len) != 0) || (fd < 0)) {
+        g_info("GZmqSource create error: %s", clean_zmq_errno());
+        g_source_unref((GSource *)source); // not attached: finalize close the socket
+        return NULL;
+    }
+    source->fd = fd;
 
-        int fd = -1;
-        size_t fd_len = sizeof(fd);
-        if (_zmq_getsockopt(source->zmq_owned_socket, ZMQ_FD, &fd, &fd_len) == 0) {
+    g_source_set_callback((GSource *)source, (GSourceFunc)(void *)fake_callback, NULL, NULL);
+    g_source_attach((GSource *)source, l_context);
+    g_source_unref((GSource *)source);
 
-            source->fd = fd;
-
-            if (G_UNLIKELY(source->fd >= 0)) {
-                g_source_set_callback((GSource *)source, (GSourceFunc)fake_callback, NULL, NULL);
-                g_source_attach((GSource *)source, l_context);
-                g_source_unref((GSource *)source);
-            } else {
-                g_info("GZmqSource create error");
-                g_zmq_source_unref(source);
-                source = NULL;
-            }
-        } else {
-            g_info("GZmqSource create error: %s", clean_zmq_errno());
-            g_zmq_source_unref(source);
-            source = NULL;
-        }
+    switch (type) {
+    case EASY_ZMQ_REQ: // polled only when a request is pending
+    case EASY_ZMQ_PUB: // never receive
+        break;
+    default:
+        _pollfdOn(source);
+        break;
     }
 
     return source;
 }
 
-GZmqSource *g_zmq_source_req_new(size_t max_mem_size, GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_REQ);
+GZmqSource *g_zmq_source_new_from_socket(void *zmq_socket, size_t max_mem_size, GMainContext *context) {
+    g_return_val_if_fail(zmq_socket != NULL, NULL);
+    return g_zmq_source_new(zmq_socket, max_mem_size, context);
+}
+
+static GZmqSource *_g_zmq_source_new_type(int zmq_type, size_t max_mem_size, GMainContext *context) {
+    void *const zmqsocket = zmq_socket(get_zmq_context(), zmq_type);
     if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, max_mem_size, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_REQ;
-        }
-        return source;
+        return g_zmq_source_new(zmqsocket, max_mem_size, context);
     } else {
         const int zerrno = zmq_errno();
-        g_info("new req socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
+        g_info("new socket (type %d) error: %d %s", zmq_type, zerrno, clean_zmq_strerror(zerrno));
         return NULL;
     }
+}
+
+GZmqSource *g_zmq_source_req_new(size_t max_mem_size, GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_REQ, max_mem_size, context);
 }
 
 GZmqSource *g_zmq_source_rep_new(size_t max_mem_size, GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_REP);
-    if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, max_mem_size, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_REP;
-            _pollfdOn(source);
-        }
-        return source;
-    } else {
-        const int zerrno = zmq_errno();
-        g_info("new rep socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
-        return NULL;
-    }
+    return _g_zmq_source_new_type(ZMQ_REP, max_mem_size, context);
 }
 
 GZmqSource *g_zmq_source_router_new(size_t max_mem_size, GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_ROUTER);
-    if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, max_mem_size, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_ROUTER;
-            _pollfdOn(source);
-        }
-        return source;
-    } else {
-        const int zerrno = zmq_errno();
-        g_info("new router socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
-        return NULL;
-    }
+    return _g_zmq_source_new_type(ZMQ_ROUTER, max_mem_size, context);
 }
 
 GZmqSource *g_zmq_source_pub_new(GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_PUB);
-    if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, 0, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_PUB;
-        }
-        return source;
-    } else {
-        const int zerrno = zmq_errno();
-        g_info("new pub socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
-        return NULL;
-    }
+    return _g_zmq_source_new_type(ZMQ_PUB, 0, context);
 }
 
 GZmqSource *g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_SUB);
-    if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, max_mem_size, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_SUB;
-            _pollfdOn(source);
-        }
-        return source;
-    } else {
-        const int zerrno = zmq_errno();
-        g_info("new pub socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
-        return NULL;
-    }
+    return _g_zmq_source_new_type(ZMQ_SUB, max_mem_size, context);
 }
 
 GZmqSource *g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) {
-    void *const zmqsocket = zmq_socket(get_zmq_context(), ZMQ_PAIR);
-    if (ISNOTNULL(zmqsocket)) {
-        GZmqSource *const source = g_zmq_source_new(zmqsocket, max_mem_size, context);
-        if (ISNOTNULL(source)) {
-            source->type = EASY_ZMQ_PAIR;
-            _pollfdOn(source);
-        }
-        return source;
-    } else {
-        const int zerrno = zmq_errno();
-        g_info("new pair socket error: %d %s", zerrno, clean_zmq_strerror(zerrno));
-        return NULL;
-    }
+    return _g_zmq_source_new_type(ZMQ_PAIR, max_mem_size, context);
+}
+
+easyzmq_socket_t g_easyzmq_get_socket_type(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, EASY_ZMQ_UNKNOWN);
+    return self->type;
+}
+
+void g_easyzmq_set_blocking_send(GZmqSource *self, gboolean blocking) {
+    g_return_if_fail(self != NULL);
+    self->send_flags = blocking ? 0 : ZMQ_DONTWAIT;
+}
+
+gboolean g_easyzmq_get_blocking_send(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, FALSE);
+    return (self->send_flags & ZMQ_DONTWAIT) ? FALSE : TRUE;
 }
 
 //
@@ -723,7 +714,7 @@ gboolean send_zmq_rep(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (G_UNLIKELY(r == -1)) {
         _pollfdOff(zmq_source);
@@ -746,7 +737,7 @@ gboolean send_zmq_rep_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestro
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (G_UNLIKELY(r == -1)) {
         _pollfdOff(zmq_source);
@@ -881,7 +872,7 @@ static gboolean _send_router_envelope(GZmqSource *zmq_source, GList *identity) {
             zmq_msg_t message;
             // the buffer ownership goes to zmq
             assert_errno(zmq_msg_init_data(&message, elem->buf, elem->len, my_zmq_free_fn, (void *)g_free) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-            if (G_UNLIKELY(_zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE) == -1)) {
+            if (G_UNLIKELY(_zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags | ZMQ_SNDMORE) == -1)) {
                 g_info("send router identity error (%d,%s)", zmq_errno(), clean_zmq_errno());
                 assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
                 ok = FALSE;
@@ -896,7 +887,7 @@ static gboolean _send_router_envelope(GZmqSource *zmq_source, GList *identity) {
     if (ok) {
         zmq_msg_t message;
         assert_errno(zmq_msg_init_size(&message, 0) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-        if (G_UNLIKELY(_zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS | ZMQ_SNDMORE) == -1)) {
+        if (G_UNLIKELY(_zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags | ZMQ_SNDMORE) == -1)) {
             g_info("send router delimiter error (%d,%s)", zmq_errno(), clean_zmq_errno());
             assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
             ok = FALSE;
@@ -917,7 +908,7 @@ static gboolean _send_router_msg(GZmqSource *zmq_source, void *pdata, zmq_msg_t 
         return FALSE;
     }
 
-    if (G_UNLIKELY(_zmq_msg_send(message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS) == -1)) {
+    if (G_UNLIKELY(_zmq_msg_send(message, zmq_source->zmq_owned_socket, zmq_source->send_flags) == -1)) {
         g_info("send router message error (%d,%s)", zmq_errno(), clean_zmq_errno());
         assert_errno(zmq_msg_close(message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
         return FALSE;
@@ -1072,7 +1063,7 @@ static gboolean _send_zmq_req_msg(GZmqSource *zmq_source, guint timeoutms, zmq_m
     g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(zmq_source->type == EASY_ZMQ_REQ);
 
-    if ((!_req_configure(zmq_source, timeoutms)) || (_zmq_msg_send(message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS) == -1)) {
+    if ((!_req_configure(zmq_source, timeoutms)) || (_zmq_msg_send(message, zmq_source->zmq_owned_socket, zmq_source->send_flags) == -1)) {
         // the pending request (if any) is not touched
         g_info("send req message error (%d, %s)", zmq_errno(), clean_zmq_errno());
         assert_errno(zmq_msg_close(message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
@@ -1202,7 +1193,7 @@ gboolean send_zmq_pub(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (r == -1) {
         g_debug("send pub message error (%d, %s)", zmq_errno(), clean_zmq_errno());
@@ -1225,7 +1216,7 @@ gboolean send_zmq_pub_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestro
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (r == -1) {
         g_debug("send pub message error (%d, %s)", zmq_errno(), clean_zmq_errno());
@@ -1260,7 +1251,7 @@ gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len) {
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, (size_t)len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (G_UNLIKELY(r == -1)) {
         g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());
@@ -1280,7 +1271,7 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
 
     zmq_msg_t message;
     assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
 
     if (G_UNLIKELY(r == -1)) {
         g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());

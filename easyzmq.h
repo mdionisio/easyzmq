@@ -56,6 +56,23 @@ GZmqSource *g_zmq_source_pub_new(GMainContext *context) G_GNUC_MALLOC;
 GZmqSource *g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 GZmqSource *g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
+/** Create a source from a zmq socket created by the user (e.g. to set options before
+ * connect/bind). The socket has to be created on get_zmq_context().
+ * The ownership of zmq_socket is taken also in case of error (the socket is closed).
+ * Returns NULL if the socket type is not supported.
+ */
+GZmqSource *g_zmq_source_new_from_socket(void *zmq_socket, size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+
+easyzmq_socket_t g_easyzmq_get_socket_type(GZmqSource *self);
+
+/** By default all the send are not blocking (ZMQ_DONTWAIT): if the message can not be queued
+ * (no peer, high water mark reached) the send function returns FALSE instead of blocking
+ * the main loop. With blocking == TRUE the old behaviour is restored (on REQ socket the send
+ * timeout is the request timeout).
+ */
+void g_easyzmq_set_blocking_send(GZmqSource *self, gboolean blocking);
+gboolean g_easyzmq_get_blocking_send(GZmqSource *self);
+
 typedef void (*GZmqMonitorFunc)(GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len);
 GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cp) G_GNUC_MALLOC;
 
