@@ -588,6 +588,58 @@ static void test_types(void) {
     types_received = NULL;
 }
 
+// ---- multipart send
+
+static void multipart_done(GObject *object, GAsyncResult *res, gpointer user_data) {
+    (void)object;
+    GPtrArray **frames = user_data;
+    *frames = g_easyzmq_receive_multipart_finish(NULL, res, NULL);
+    g_main_loop_quit(loop);
+}
+
+static void test_multipart(void) {
+    // PAIR: 3 frames received as one message
+    GZmqSource *a = g_zmq_source_pair_new(0, NULL);
+    GZmqSource *b = g_zmq_source_pair_new(0, NULL);
+    g_assert(g_easyzmq_bind(a, "inproc://multipart", NULL));
+    g_assert(g_easyzmq_connect(b, "inproc://multipart", NULL));
+    GPtrArray *frames = NULL;
+    g_easyzmq_receive_async(a, NULL, multipart_done, &frames);
+    g_assert(g_easyzmq_send_more(b, (const guint8 *)"h1", 2));
+    g_assert(g_easyzmq_send_more(b, NULL, 0));
+    g_assert(send_zmq_pair(b, (const guint8 *)"body", 4));
+    run_loop_ms(2000);
+    g_assert(frames != NULL);
+    g_assert_cmpuint(frames->len, ==, 3);
+    g_assert_cmpuint(g_bytes_get_size(g_ptr_array_index(frames, 1)), ==, 0);
+    g_assert_cmpuint(g_bytes_get_size(g_ptr_array_index(frames, 2)), ==, 4);
+    g_ptr_array_unref(frames);
+    frames = NULL;
+
+    // DEALER -> ROUTER: empty delimiter + request, answer with the same envelope
+    GZmqSource *router = g_zmq_source_router_new(0, NULL);
+    g_assert(g_easyzmq_bind(router, "inproc://multipart-router", NULL));
+    router_received = 0;
+    g_assert(recv_zmq_router(router, router_cb, &router_user_data_value, NULL));
+    GZmqSource *dealer = g_zmq_source_dealer_new(0, NULL);
+    g_assert(g_easyzmq_connect(dealer, "inproc://multipart-router", NULL));
+    g_easyzmq_receive_async(dealer, NULL, multipart_done, &frames);
+    g_assert(g_easyzmq_send_more(dealer, NULL, 0));
+    g_assert(g_easyzmq_send(dealer, (const guint8 *)"ask", 3));
+    run_loop_ms(2000);
+    g_assert_cmpint(router_received, ==, 1);
+    g_assert(frames != NULL);
+    g_assert_cmpuint(frames->len, ==, 2);
+    g_assert_cmpuint(g_bytes_get_size(g_ptr_array_index(frames, 0)), ==, 0);
+    g_assert(memcmp(g_bytes_get_data(g_ptr_array_index(frames, 1), NULL), "ask", 3) == 0);
+    g_ptr_array_unref(frames);
+
+    g_zmq_source_close(&dealer);
+    g_zmq_source_close(&router);
+    g_zmq_source_close(&b);
+    g_zmq_source_close(&a);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -607,6 +659,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/bytes", test_bytes);
     g_test_add_func("/easyzmq/options", test_options);
     g_test_add_func("/easyzmq/types", test_types);
+    g_test_add_func("/easyzmq/multipart", test_multipart);
 
     const int ret = g_test_run();
 

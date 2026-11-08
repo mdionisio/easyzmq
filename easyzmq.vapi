@@ -213,6 +213,13 @@ namespace EasyZmq {
         [CCode (cname = "g_easyzmq_send_take")]
         public bool SendTake (owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free);
 
+        // multipart: frames sent with SendMore, the last one with any normal send
+        [CCode (cname = "g_easyzmq_send_more")]
+        public bool SendMore (uint8[] buf);
+
+        [CCode (cname = "g_easyzmq_send_bytes_more")]
+        public bool SendBytesMore (GLib.Bytes data);
+
         // Request
 
         [CCode (cname = "send_zmq_req")]

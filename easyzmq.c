@@ -898,6 +898,30 @@ gboolean g_easyzmq_send_take(GZmqSource *zmq_source, guint8 *buf, int len, GDest
     return _send_msg(zmq_source, &message, 0);
 }
 
+gboolean g_easyzmq_send_more(GZmqSource *zmq_source, const guint8 *buf, int len) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_send(zmq_source->type), FALSE);
+    g_return_val_if_fail(len >= 0, FALSE);
+
+    zmq_msg_t message;
+    if (len == 0) {
+        assert_errno(zmq_msg_init_size(&message, 0) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
+    } else {
+        _msg_init_copy(&message, buf, len);
+    }
+    return _send_msg(zmq_source, &message, ZMQ_SNDMORE);
+}
+
+gboolean g_easyzmq_send_bytes_more(GZmqSource *zmq_source, GBytes *bytes) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(bytes != NULL, FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_send(zmq_source->type), FALSE);
+
+    zmq_msg_t message;
+    _msg_init_bytes(&message, bytes);
+    return _send_msg(zmq_source, &message, ZMQ_SNDMORE);
+}
+
 gboolean g_easyzmq_recv(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
     g_return_val_if_fail(zmq_source != NULL, FALSE);
     g_return_val_if_fail(_easyzmq_type_can_recv(zmq_source->type), FALSE);

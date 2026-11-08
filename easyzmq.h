@@ -220,6 +220,16 @@ gboolean g_easyzmq_recv(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user
 gboolean g_easyzmq_send(GZmqSource *zmq_source, const guint8 *buf, int len);
 gboolean g_easyzmq_send_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
 
+/** Multipart send: send a frame with ZMQ_SNDMORE (len can be 0, e.g. the envelope delimiter).
+ * The last frame is sent with any normal send function of the source
+ * (g_easyzmq_send*, send_zmq_pub*, send_zmq_pair*, send_zmq_rep*).
+ * Same socket types of g_easyzmq_send (not REQ and ROUTER).
+ * zmq delivers a multipart message atomically (all the frames or nothing) only when the last
+ * frame is sent: if a frame after the first one fails, the message can not be cancelled.
+ */
+gboolean g_easyzmq_send_more(GZmqSource *zmq_source, const guint8 *buf, int len);
+gboolean g_easyzmq_send_bytes_more(GZmqSource *zmq_source, GBytes *bytes);
+
 void g_zmq_source_destroy(GZmqSource *self);
 
 static inline void g_zmq_source_close(GZmqSource **self) {
