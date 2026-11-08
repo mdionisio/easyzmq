@@ -28,7 +28,13 @@ typedef enum { EASY_ZMQ_PUB,
                EASY_ZMQ_REP,
                EASY_ZMQ_PAIR,
                EASY_ZMQ_ROUTER,
-               EASY_ZMQ_UNKNOWN } easyzmq_socket_t;
+               EASY_ZMQ_UNKNOWN,
+               // added after UNKNOWN to keep the old values
+               EASY_ZMQ_DEALER,
+               EASY_ZMQ_PUSH,
+               EASY_ZMQ_PULL,
+               EASY_ZMQ_XPUB,
+               EASY_ZMQ_XSUB } easyzmq_socket_t;
 
 typedef enum {
     EASYZMQ_EVENT_UNKNOWN = 0,
@@ -63,6 +69,11 @@ GZmqSource *g_zmq_source_router_new(size_t max_mem_size, GMainContext *context) 
 GZmqSource *g_zmq_source_pub_new(GMainContext *context) G_GNUC_MALLOC;
 GZmqSource *g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 GZmqSource *g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+GZmqSource *g_zmq_source_dealer_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+GZmqSource *g_zmq_source_push_new(GMainContext *context) G_GNUC_MALLOC;
+GZmqSource *g_zmq_source_pull_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+GZmqSource *g_zmq_source_xpub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
+GZmqSource *g_zmq_source_xsub_new(size_t max_mem_size, GMainContext *context) G_GNUC_MALLOC;
 
 /** Create a source from a zmq socket created by the user (e.g. to set options before
  * connect/bind). The socket has to be created on get_zmq_context().
@@ -156,9 +167,9 @@ gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestr
  */
 typedef gboolean (*GZmqSourceBytesFunc)(GZmqSource *zmq_source, GBytes *data, gboolean more, gpointer user_data);
 
-/** register the receive callback (SUB, PAIR, REP), data == NULL means receive error */
+/** register the receive callback (all the types of g_easyzmq_recv), data == NULL means receive error */
 gboolean g_easyzmq_recv_bytes(GZmqSource *zmq_source, GZmqSourceBytesFunc cb, gpointer user_data, GDestroyNotify notify);
-/** send on PUB, PAIR, REP */
+/** send (all the types of g_easyzmq_send) */
 gboolean g_easyzmq_send_bytes(GZmqSource *zmq_source, GBytes *bytes);
 gboolean send_zmq_req_bytes(GZmqSource *zmq_source, guint timeoutms, GBytes *bytes, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
 gboolean send_zmq_router_bytes(GZmqSource *zmq_source, void *identity, GBytes *bytes);
@@ -182,7 +193,7 @@ gboolean g_easyzmq_get_paused(GZmqSource *self);
  *   With timeoutms == 0 the socket is in strict REQ mode: after a cancel a new request can
  *   be sent only when the old answer is received (use a timeout to avoid it).
  *
- * receive (SUB, PAIR, REP, ...): wait the next message. More receive can be pending, they are
+ * receive (all the types of g_easyzmq_recv): wait the next message. More receive can be pending, they are
  *   completed in order. When nobody is waiting the source is paused (messages stay in zmq).
  *   Using recv_zmq_* (callback API) on the same source closes the pending receive
  *   (G_IO_ERROR_CLOSED).
@@ -197,6 +208,17 @@ GPtrArray *g_easyzmq_request_multipart_finish(GZmqSource *req, GAsyncResult *res
 void g_easyzmq_receive_async(GZmqSource *source, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
 GBytes *g_easyzmq_receive_finish(GZmqSource *source, GAsyncResult *result, GError **error);
 GPtrArray *g_easyzmq_receive_multipart_finish(GZmqSource *source, GAsyncResult *result, GError **error);
+
+/* Generic receive/send, for all the socket types:
+ *   receive: SUB, PAIR, REP, DEALER, PULL, XPUB (subscriptions), XSUB
+ *   send:    PUB, PAIR, REP, DEALER, PUSH, XPUB, XSUB (subscriptions: "\x01topic" / "\x00topic")
+ * REQ and ROUTER have their own functions (callback per request / identity).
+ * A ROUTER source expects REQ peers (envelope with empty delimiter), a DEALER talking to it
+ * has to send the empty delimiter frame first (see g_easyzmq_send_more).
+ */
+gboolean g_easyzmq_recv(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
+gboolean g_easyzmq_send(GZmqSource *zmq_source, const guint8 *buf, int len);
+gboolean g_easyzmq_send_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
 
 void g_zmq_source_destroy(GZmqSource *self);
 

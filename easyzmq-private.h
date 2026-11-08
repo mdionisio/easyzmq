@@ -38,4 +38,36 @@ struct _ZmqSource {
     gpointer async_recv;
 };
 
+// types that can use the generic receive (callback, bytes, async)
+static inline gboolean _easyzmq_type_can_recv(easyzmq_socket_t type) {
+    switch (type) {
+    case EASY_ZMQ_SUB:
+    case EASY_ZMQ_PAIR:
+    case EASY_ZMQ_REP:
+    case EASY_ZMQ_DEALER:
+    case EASY_ZMQ_PULL:
+    case EASY_ZMQ_XPUB:
+    case EASY_ZMQ_XSUB:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+// types that can use the generic send
+static inline gboolean _easyzmq_type_can_send(easyzmq_socket_t type) {
+    switch (type) {
+    case EASY_ZMQ_PUB:
+    case EASY_ZMQ_PAIR:
+    case EASY_ZMQ_REP:
+    case EASY_ZMQ_DEALER:
+    case EASY_ZMQ_PUSH:
+    case EASY_ZMQ_XPUB:
+    case EASY_ZMQ_XSUB:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 #endif /* EASYZMQ_PRIVATE_H */

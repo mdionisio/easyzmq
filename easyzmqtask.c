@@ -265,8 +265,7 @@ static void recv_task_cancelled(GTask *task) {
 
 void g_easyzmq_receive_async(GZmqSource *source, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data) {
     g_return_if_fail(source != NULL);
-    const easyzmq_socket_t type = g_easyzmq_get_socket_type(source);
-    g_return_if_fail((type != EASY_ZMQ_REQ) && (type != EASY_ZMQ_PUB) && (type != EASY_ZMQ_ROUTER));
+    g_return_if_fail(_easyzmq_type_can_recv(g_easyzmq_get_socket_type(source)));
 
     GTask *const task = g_task_new(NULL, cancellable, callback, user_data);
     g_task_set_source_tag(task, g_easyzmq_receive_async);

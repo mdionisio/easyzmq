@@ -545,6 +545,16 @@ static easyzmq_socket_t _easyzmq_type_from_zmq(int zmq_type) {
         return EASY_ZMQ_PAIR;
     case ZMQ_ROUTER:
         return EASY_ZMQ_ROUTER;
+    case ZMQ_DEALER:
+        return EASY_ZMQ_DEALER;
+    case ZMQ_PUSH:
+        return EASY_ZMQ_PUSH;
+    case ZMQ_PULL:
+        return EASY_ZMQ_PULL;
+    case ZMQ_XPUB:
+        return EASY_ZMQ_XPUB;
+    case ZMQ_XSUB:
+        return EASY_ZMQ_XSUB;
     default:
         return EASY_ZMQ_UNKNOWN;
     }
@@ -583,7 +593,7 @@ static GZmqSource *g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMa
     source->fd = -1;
     source->ref_count = 1;
 
-    if ((max_mem_size > 0) && (type != EASY_ZMQ_PUB)) {
+    if ((max_mem_size > 0) && (type != EASY_ZMQ_PUB) && (type != EASY_ZMQ_PUSH)) {
         int64_t max_msg_size = (int64_t)max_mem_size;
         if (_zmq_setsockopt(l_zmq_socket, ZMQ_MAXMSGSIZE, &max_msg_size, sizeof(max_msg_size)) != 0) {
             g_warning("GZmqSource error setting max message size %s", clean_zmq_errno());
@@ -611,6 +621,7 @@ static GZmqSource *g_zmq_source_new(void *l_zmq_socket, size_t max_mem_size, GMa
     switch (type) {
     case EASY_ZMQ_REQ: // polled only when a request is pending
     case EASY_ZMQ_PUB: // never receive
+    case EASY_ZMQ_PUSH:
         break;
     default:
         _pollfdOn(source);
@@ -658,6 +669,26 @@ GZmqSource *g_zmq_source_sub_new(size_t max_mem_size, GMainContext *context) {
 
 GZmqSource *g_zmq_source_pair_new(size_t max_mem_size, GMainContext *context) {
     return _g_zmq_source_new_type(ZMQ_PAIR, max_mem_size, context);
+}
+
+GZmqSource *g_zmq_source_dealer_new(size_t max_mem_size, GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_DEALER, max_mem_size, context);
+}
+
+GZmqSource *g_zmq_source_push_new(GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_PUSH, 0, context);
+}
+
+GZmqSource *g_zmq_source_pull_new(size_t max_mem_size, GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_PULL, max_mem_size, context);
+}
+
+GZmqSource *g_zmq_source_xpub_new(size_t max_mem_size, GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_XPUB, max_mem_size, context);
+}
+
+GZmqSource *g_zmq_source_xsub_new(size_t max_mem_size, GMainContext *context) {
+    return _g_zmq_source_new_type(ZMQ_XSUB, max_mem_size, context);
 }
 
 easyzmq_socket_t g_easyzmq_get_socket_type(GZmqSource *self) {
@@ -839,25 +870,46 @@ static gboolean _send_msg(GZmqSource *zmq_source, zmq_msg_t *message, int flags)
     return TRUE;
 }
 
-static gboolean _type_can_send(easyzmq_socket_t type) {
-    switch (type) {
-    case EASY_ZMQ_PUB:
-    case EASY_ZMQ_REP:
-    case EASY_ZMQ_PAIR:
-        return TRUE;
-    default:
-        return FALSE;
-    }
-}
-
 gboolean g_easyzmq_send_bytes(GZmqSource *zmq_source, GBytes *bytes) {
     g_return_val_if_fail(zmq_source != NULL, FALSE);
     g_return_val_if_fail(bytes != NULL, FALSE);
-    g_return_val_if_fail(_type_can_send(zmq_source->type), FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_send(zmq_source->type), FALSE);
 
     zmq_msg_t message;
     _msg_init_bytes(&message, bytes);
     return _send_msg(zmq_source, &message, 0);
+}
+
+gboolean g_easyzmq_send(GZmqSource *zmq_source, const guint8 *buf, int len) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_send(zmq_source->type), FALSE);
+
+    zmq_msg_t message;
+    _msg_init_copy(&message, buf, len);
+    return _send_msg(zmq_source, &message, 0);
+}
+
+gboolean g_easyzmq_send_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_send(zmq_source->type), FALSE);
+
+    zmq_msg_t message;
+    _msg_init_take(&message, buf, len, destroy_data);
+    return _send_msg(zmq_source, &message, 0);
+}
+
+gboolean g_easyzmq_recv(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_recv(zmq_source->type), FALSE);
+
+    if (zmq_source->type == EASY_ZMQ_REP) {
+        return recv_zmq_rep(zmq_source, cb, user_data, notify);
+    }
+    if (ISNULL(cb)) {
+        cb = fake_callback;
+    }
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)cb, user_data, notify);
+    return TRUE;
 }
 
 // receive with GBytes
@@ -893,7 +945,7 @@ static gboolean bytes_callback(GZmqSource *zmq_source, const guint8 *buf, int le
 
 gboolean g_easyzmq_recv_bytes(GZmqSource *zmq_source, GZmqSourceBytesFunc cb, gpointer user_data, GDestroyNotify notify) {
     g_return_val_if_fail(zmq_source != NULL, FALSE);
-    g_return_val_if_fail((zmq_source->type != EASY_ZMQ_REQ) && (zmq_source->type != EASY_ZMQ_PUB) && (zmq_source->type != EASY_ZMQ_ROUTER), FALSE);
+    g_return_val_if_fail(_easyzmq_type_can_recv(zmq_source->type), FALSE);
 
     bytes_callback_data_t *const pdata = g_slice_new0(bytes_callback_data_t);
     pdata->callback = cb;

@@ -525,6 +525,69 @@ static void test_options(void) {
     g_zmq_source_close(&sub);
 }
 
+// ---- other socket types
+
+static GPtrArray *types_received = NULL;
+
+static gboolean types_cb(G_GNUC_UNUSED GZmqSource *zmq_source, const guint8 *buf, int len, G_GNUC_UNUSED gboolean more, G_GNUC_UNUSED gpointer user_data) {
+    g_assert(buf != NULL);
+    g_ptr_array_add(types_received, g_strndup((const gchar *)buf, (gsize)len));
+    return G_SOURCE_CONTINUE;
+}
+
+static void test_types(void) {
+    types_received = g_ptr_array_new_with_free_func(g_free);
+
+    // PUSH -> PULL
+    GZmqSource *push = g_zmq_source_push_new(NULL);
+    GZmqSource *pull = g_zmq_source_pull_new(0, NULL);
+    g_assert(g_easyzmq_get_socket_type(push) == EASY_ZMQ_PUSH);
+    g_assert(g_easyzmq_bind(pull, "inproc://pushpull", NULL));
+    g_assert(g_easyzmq_connect(push, "inproc://pushpull", NULL));
+    g_assert(g_easyzmq_recv(pull, types_cb, NULL, NULL));
+    g_assert(g_easyzmq_send(push, (const guint8 *)"job", 3));
+    run_loop_ms(100);
+    g_assert_cmpuint(types_received->len, ==, 1);
+    g_assert_cmpstr(g_ptr_array_index(types_received, 0), ==, "job");
+
+    // DEALER <-> DEALER
+    GZmqSource *d1 = g_zmq_source_dealer_new(0, NULL);
+    GZmqSource *d2 = g_zmq_source_dealer_new(0, NULL);
+    g_assert(g_easyzmq_bind(d1, "inproc://dealer", NULL));
+    g_assert(g_easyzmq_connect(d2, "inproc://dealer", NULL));
+    g_assert(g_easyzmq_recv(d1, types_cb, NULL, NULL));
+    g_assert(g_easyzmq_send(d2, (const guint8 *)"deal", 4));
+    run_loop_ms(100);
+    g_assert_cmpuint(types_received->len, ==, 2);
+    g_assert_cmpstr(g_ptr_array_index(types_received, 1), ==, "deal");
+
+    // XSUB -> XPUB: the subscription is received by XPUB, then the data by XSUB
+    GZmqSource *xpub = g_zmq_source_xpub_new(0, NULL);
+    GZmqSource *xsub = g_zmq_source_xsub_new(0, NULL);
+    g_assert(g_easyzmq_bind(xpub, "inproc://xpub", NULL));
+    g_assert(g_easyzmq_connect(xsub, "inproc://xpub", NULL));
+    g_assert(g_easyzmq_recv(xpub, types_cb, NULL, NULL));
+    g_assert(g_easyzmq_recv(xsub, types_cb, NULL, NULL));
+    g_assert(g_easyzmq_send(xsub, (const guint8 *)"\x01top", 4));
+    run_loop_ms(100);
+    g_assert_cmpuint(types_received->len, ==, 3);
+    g_assert_cmpstr(g_ptr_array_index(types_received, 2), ==, "\x01top");
+    g_assert(g_easyzmq_send(xpub, (const guint8 *)"topic data", 10));
+    g_assert(g_easyzmq_send(xpub, (const guint8 *)"other", 5)); // filtered
+    run_loop_ms(100);
+    g_assert_cmpuint(types_received->len, ==, 4);
+    g_assert_cmpstr(g_ptr_array_index(types_received, 3), ==, "topic data");
+
+    g_zmq_source_close(&push);
+    g_zmq_source_close(&pull);
+    g_zmq_source_close(&d1);
+    g_zmq_source_close(&d2);
+    g_zmq_source_close(&xpub);
+    g_zmq_source_close(&xsub);
+    g_ptr_array_unref(types_received);
+    types_received = NULL;
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -543,6 +606,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/task-receive", test_task_receive);
     g_test_add_func("/easyzmq/bytes", test_bytes);
     g_test_add_func("/easyzmq/options", test_options);
+    g_test_add_func("/easyzmq/types", test_types);
 
     const int ret = g_test_run();
 

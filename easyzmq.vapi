@@ -46,7 +46,12 @@ namespace EasyZmq {
         REP,
         PAIR,
         ROUTER,
-        UNKNOWN
+        UNKNOWN,
+        DEALER,
+        PUSH,
+        PULL,
+        XPUB,
+        XSUB
     }
 
     // most used zmq socket options (any ZMQ_* value can be used casting an int)
@@ -123,6 +128,21 @@ namespace EasyZmq {
         [CCode (cname = "g_zmq_source_router_new")]
         public ZmqSource.Router (size_t max_size = 0, GLib.MainContext ? gcontext = null);
 
+        [CCode (cname = "g_zmq_source_dealer_new")]
+        public ZmqSource.Dealer (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "g_zmq_source_push_new")]
+        public ZmqSource.Push (GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "g_zmq_source_pull_new")]
+        public ZmqSource.Pull (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "g_zmq_source_xpub_new")]
+        public ZmqSource.XPub (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
+        [CCode (cname = "g_zmq_source_xsub_new")]
+        public ZmqSource.XSub (size_t max_size = 0, GLib.MainContext ? gcontext = null);
+
         // take the ownership of the zmq socket
         [CCode (cname = "g_zmq_source_new_from_socket")]
         public ZmqSource.FromSocket (void* zmq_socket, size_t max_size = 0, GLib.MainContext ? gcontext = null);
@@ -181,6 +201,17 @@ namespace EasyZmq {
 
         [CCode (cname = "GZmqSourceFunc", has_target = false)]
         public delegate bool callback(EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void* user_data);
+
+        // Generic receive (Sub, Pair, Rep, Dealer, Pull, XPub, XSub) and send (Pub, Pair, Rep, Dealer, Push, XPub, XSub)
+
+        [CCode (cname = "g_easyzmq_recv")]
+        public bool Recv (callback cb, void* user_data = null, GLib.DestroyNotify ? unotify = null);
+
+        [CCode (cname = "g_easyzmq_send")]
+        public bool Send (uint8[] buf);
+
+        [CCode (cname = "g_easyzmq_send_take")]
+        public bool SendTake (owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free);
 
         // Request
 
