@@ -194,6 +194,10 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
     GZmqSourceFunc const zcallback = (GZmqSourceFunc)callback;
 
     for (;;) {
+        if (g_source_is_destroyed(source)) {
+            // the source has been destroyed from inside a callback
+            return G_SOURCE_REMOVE;
+        }
         if (ISNOTNULL(self->zmq_owned_socket)) { // valid socket (using zeromq)
             int zevents = 0;
             int done = 0;
@@ -212,6 +216,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                 if (ISNOTNULL(self->msg_receive)) {
                     int rc = _zmq_recv(self->zmq_owned_socket, self->msg_receive, self->size_receive, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                     gboolean ret = FALSE;
+                    gboolean last_part = FALSE;
                     if ((rc < 0) || (((size_t)rc) > self->size_receive)) {
                         g_info("error receiving zmq message (%d,%zu): %s (%d)", rc, self->size_receive, clean_zmq_errno(), zmq_errno());
                         if (ISNOTNULL(zcallback)) {
@@ -225,7 +230,8 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                         size_t more_len = sizeof(more);
                         assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
                         DBG("data recevied -> call callback (buffer: %p)", self->msg_receive);
-                        ret = zcallback(self, 
+                        last_part = (more == 0);
+                        ret = zcallback(self,
                                         (const guint8 *)self->msg_receive, 
                                         rc, (more != 0) ? TRUE : FALSE, 
                                         user_data);
@@ -238,12 +244,19 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                     if (ret == G_SOURCE_REMOVE) {
                         return G_SOURCE_REMOVE;
                     }
+                    if ((self->type == EASY_ZMQ_REQ) && last_part) {
+                        // a REQ callback is valid only for one answer: the user
+                        // callback could have sent a new request, so the next
+                        // message has to be dispatched with the new callback
+                        return G_SOURCE_CONTINUE;
+                    }
                 } else {
                     zmq_msg_t msg;
                     if (zmq_msg_init(&msg) == 0) {
                         DBG("data recevied create msg (msg: %p)", &msg);
                         const int size = _zmq_recvmsg(self->zmq_owned_socket, &msg, 0 /* WAIT BECAUSE I ALREADY CHECK THAT THERE IS DATA */);
                         gboolean ret = FALSE;
+                        gboolean last_part = FALSE;
                         if (size < 0) {
                             g_info("error receiving zmq message: %s (%d)", clean_zmq_errno(), zmq_errno());
                             if (ISNOTNULL(zcallback)) {
@@ -253,6 +266,7 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                                 ret = G_SOURCE_REMOVE;
                             }
                         } else {
+                            last_part = !zmq_msg_more(&msg);
                             if (ISNOTNULL(zcallback)) {
                                 DBG("data recevied -> call callback (msg: %p)", &msg);
                                 ret = zcallback(self, 
@@ -270,6 +284,10 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
 
                         if (ret == G_SOURCE_REMOVE) {
                             return G_SOURCE_REMOVE;
+                        }
+                        if ((self->type == EASY_ZMQ_REQ) && last_part) {
+                            // see comment above
+                            return G_SOURCE_CONTINUE;
                         }
                     } else {
                         g_info("no memory to receive any message");
