@@ -82,6 +82,8 @@ if get_option('examples')
 			'testzmqreqasyncvala' : 'testreqasyncvala.vala',
 			'testzmqrepvala' : 'testrepvala.vala',
 			'testzmqsubvala' : 'testsubvala.vala',
+			'testzmqrepasyncvala' : 'testrepasyncvala.vala',
+			'testzmqsubasyncvala' : 'testsubasyncvala.vala',
 		}
 		# valac would look for a libzmq.vapi: the zmq dependency is only for the C compiler
 		easyzmq_vala_dep = declare_dependency(
@@ -94,5 +96,14 @@ if get_option('examples')
 				vala_args : ['--vapidir', meson.current_source_dir()],
 				c_args : ['-w'])
 		endforeach
+
+		# self contained async example (inproc) also used as test
+		testasyncvala = executable('testzmqasyncvala', ['testasyncvala.vala', 'easyzmq.vapi'],
+			dependencies : [glibdep, giodep, easyzmq_vala_dep],
+			vala_args : ['--vapidir', meson.current_source_dir()],
+			c_args : ['-w'])
+		if get_option('tests')
+			test('easyzmq-vala-async', testasyncvala, timeout : 60)
+		endif
 	endif
 endif
