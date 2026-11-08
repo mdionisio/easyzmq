@@ -144,10 +144,6 @@ typedef gboolean (*GZmqSourceIdentityFunc)(GZmqSource *zmq_source, void *identit
 gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
 gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf, int len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
 
-void send_zmq_req_async(GZmqSource *req, guint timeoutms, const guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
-void send_zmq_req_take_async(GZmqSource *req, guint timeoutms, guint8 *buf, int buf_length, GAsyncReadyCallback _callback_, gpointer _user_data_);
-void send_zmq_req_finish(GZmqSource *req, GAsyncResult *_res_, const guint8 **bufout, int *bufout_length, gboolean *more);
-
 static inline gboolean send_zmq_req_easy(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data) { return send_zmq_req(zmq_source, timeoutms, buf, len, cb, user_data, NULL); }
 
 static inline gboolean send_zmq_req_take_easy(GZmqSource *zmq_source, guint timeoutms, guint8 *buf, int len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data) {

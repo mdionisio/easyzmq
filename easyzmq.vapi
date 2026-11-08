@@ -278,15 +278,6 @@ namespace EasyZmq {
             [CCode (cname = "g_easyzmq_set_paused")] set;
         }
 
-        // old async API: bufout is valid only until the next yield
-        [Version (deprecated = true, replacement = "Request")]
-        [CCode (cname = "send_zmq_req_async", finish_name = "send_zmq_req_finish")]
-        public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
-
-        [Version (deprecated = true, replacement = "Request")]
-        [CCode (cname = "send_zmq_req_take_async", finish_name = "send_zmq_req_finish")]
-        public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout, out bool more);
-
         // Replay
 
         [CCode (cname = "recv_zmq_rep")]

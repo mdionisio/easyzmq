@@ -12,7 +12,7 @@ giodep = dependency('gio-2.0', version : '>= 2.44')
 
 inc = include_directories('.')
 
-easyzmq_sources = ['easyzmq.c', 'easyzmqasync.c', 'easyzmqtask.c']
+easyzmq_sources = ['easyzmq.c', 'easyzmqtask.c']
 easyzmq_headers = ['easyzmq.h']
 
 easyzmq = library('easyzmq',
