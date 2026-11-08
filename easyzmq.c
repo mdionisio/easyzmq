@@ -2,6 +2,7 @@
 #include "easyzmq.h"
 
 #include <glib.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <zmq.h>
@@ -944,47 +945,58 @@ typedef struct req_callback_data {
     GDestroyNotify notify;
     GZmqSourceFunc callback;
     GZmqSource *zmq_source;
-    guint timeout_handler;
-    guint timeoutms;
+    GSource *timeout_source; // owned reference, NULL when no timeout is pending
+    gboolean timeout_expired;
 } req_callback_data_t;
+
+static void req_timeout_cancel(req_callback_data_t *pdata) {
+    g_assert(pdata != NULL);
+    if (ISNOTNULL(pdata->timeout_source)) {
+        GSource *const timeout_source = pdata->timeout_source;
+        pdata->timeout_source = NULL;
+        g_source_destroy(timeout_source);
+        g_source_unref(timeout_source);
+    }
+}
 
 static void req_callback_data_free(gpointer data) {
     g_assert(data != NULL);
-    
+
     req_callback_data_t *const pdata = (req_callback_data_t *)data;
+    // the request could be dropped while the timeout is still pending
+    // (new request or source destroyed): the timeout must not fire on freed memory
+    req_timeout_cancel(pdata);
     if (G_LIKELY((pdata->notify != NULL) && (pdata->user_data != NULL))) {
         pdata->notify(pdata->user_data);
     }
     pdata->user_data = NULL;
     pdata->notify = NULL;
-    g_slice_free(req_callback_data_t, data);
+    g_slice_free(req_callback_data_t, pdata);
 }
 
 static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
     g_assert(user_data != NULL);
+    g_assert(zmq_source != NULL);
     req_callback_data_t *const pdata = (req_callback_data_t *)user_data;
-    if ((pdata->timeout_handler == 0) && (pdata->timeoutms > 0U)) {
+    if (pdata->timeout_expired) {
         g_warning("timeout already manage so skip this");
     } else {
-        if (pdata->timeout_handler > 0U) {
-            g_source_remove(pdata->timeout_handler);
-            pdata->timeout_handler = 0U;
-        }
+        req_timeout_cancel(pdata);
         if (!more) {
             _pollfdOff(zmq_source);
         }
 
         g_zmq_source_ref(zmq_source);
-        pdata->timeoutms = 0U;
-        GZmqSourceFunc callback = pdata->callback;
+        GZmqSourceFunc const callback = pdata->callback;
         GDestroyNotify notify2 = NULL;
         void *const user_data2 = pdata->user_data;
-        GZmqSource *const zmq_source = pdata->zmq_source;
         if (!more) {
             notify2 = pdata->notify;
             pdata->notify = NULL;
             pdata->user_data = NULL;
-            g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
+            pdata->callback = NULL;
+            // pdata is still valid until the end of the dispatch (GLib keeps a reference on the callback data)
+            g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)fake_callback, NULL, NULL);
         }
         if (ISNOTNULL(callback)) {
             callback(zmq_source, buf, len, more, user_data2);
@@ -1002,19 +1014,22 @@ static gboolean req_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
 static gboolean req_timeout_callback(gpointer user_data) {
     g_assert(user_data != NULL);
     req_callback_data_t *const pdata = (req_callback_data_t *)user_data;
-    pdata->timeout_handler = 0U;
-    pdata->timeoutms = 0U;
+    g_assert(pdata->timeout_source != NULL);
+    g_source_unref(pdata->timeout_source); // the source is destroyed returning G_SOURCE_REMOVE
+    pdata->timeout_source = NULL;
+    pdata->timeout_expired = TRUE;
     void *const user_data2 = pdata->user_data;
-    GDestroyNotify notify2 = pdata->notify;
+    GDestroyNotify const notify2 = pdata->notify;
     GZmqSource *const zmq_source = pdata->zmq_source;
-    GZmqSourceFunc callback = pdata->callback;
+    GZmqSourceFunc const callback = pdata->callback;
     pdata->notify = NULL;
     pdata->user_data = NULL;
+    pdata->callback = NULL;
     _pollfdOff(zmq_source);
     g_zmq_source_ref(zmq_source);
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL); // this call means destroy user_data
+    // this call destroy pdata so all the used parameter are saved before
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)fake_callback, NULL, NULL);
     if (ISNOTNULL(callback)) {
-        // so all the used parameter is saved before use it
         callback(zmq_source, NULL, 0, FALSE, user_data2);
     }
     if (ISNOTNULL(notify2) && ISNOTNULL(user_data2)) {
@@ -1025,185 +1040,86 @@ static gboolean req_timeout_callback(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
-gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+static gboolean _req_configure(GZmqSource *zmq_source, guint timeoutms) {
+    const gboolean with_timeout = (timeoutms > 0U) && (timeoutms < (guint)INT_MAX);
+    // with timeout the socket has to accept a new request also if the answer never arrive
+    const int sndtimeo = with_timeout ? (int)timeoutms : -1;
+    const int relaxed = with_timeout ? 1 : 0;
+
+    if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &sndtimeo, sizeof(sndtimeo)) != 0) {
+        g_info("error %s[%d] on zmq_setsockopt ZMQ_SNDTIMEO", clean_zmq_errno(), zmq_errno());
+        return FALSE;
+    }
+    if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &relaxed, sizeof(relaxed)) != 0) {
+        g_info("error %s[%d] on zmq_setsockopt ZMQ_REQ_CORRELATE", clean_zmq_errno(), zmq_errno());
+    }
+    if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &relaxed, sizeof(relaxed)) != 0) {
+        g_info("error %s[%d] on zmq_setsockopt ZMQ_REQ_RELAXED", clean_zmq_errno(), zmq_errno());
+    }
+    return TRUE;
+}
+
+// send message (always consumed) and register the callback for the answer
+static gboolean _send_zmq_req_msg(GZmqSource *zmq_source, guint timeoutms, zmq_msg_t *message, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
     g_assert(zmq_source != NULL);
     g_assert(cb != NULL);
     g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_REQ);
 
-    gboolean ret = FALSE;
+    if ((!_req_configure(zmq_source, timeoutms)) || (_zmq_msg_send(message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS) == -1)) {
+        // the pending request (if any) is not touched
+        g_info("send req message error (%d, %s)", zmq_errno(), clean_zmq_errno());
+        assert_errno(zmq_msg_close(message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
+        // user_data is always released (also in case of error)
+        if (ISNOTNULL(notify) && ISNOTNULL(user_data)) {
+            notify(user_data);
+        }
+        return FALSE;
+    }
 
+    // the answer is dispatched from the main loop so it is safe to register the callback after the send
     req_callback_data_t *const pdata = g_slice_new0(req_callback_data_t);
     pdata->zmq_source = zmq_source;
     pdata->user_data = user_data;
     pdata->notify = notify;
     pdata->callback = cb;
-    pdata->timeout_handler = 0U;
-    pdata->timeoutms = 0U;
+    pdata->timeout_source = NULL;
+    pdata->timeout_expired = FALSE;
 
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)req_callback, pdata, req_callback_data_free);
+    // an old pending request (only possible with timeout/relaxed mode) is released here
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)req_callback, pdata, req_callback_data_free);
 
     if (timeoutms > 0U) {
-        int timeoutms = timeoutms;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-            return FALSE;
-        }
-        int req_correlate = 1;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-            // return FALSE;
-        }
-        int req_relaxed = 1;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-            // return FALSE;
-        }
-    } else {
-        int timeoutms = -1;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &timeoutms, sizeof(timeoutms)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-            return FALSE;
-        }
-        int req_correlate = 0;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-            // return FALSE;
-        }
-        int req_relaxed = 0;
-        if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
-            g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-            // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-            // return FALSE;
-        }
+        // the timeout has to run on the same context of the socket
+        pdata->timeout_source = g_timeout_source_new(timeoutms);
+        g_source_set_callback(pdata->timeout_source, req_timeout_callback, pdata, NULL);
+        g_source_attach(pdata->timeout_source, g_source_get_context((GSource *)zmq_source));
     }
 
     _pollfdOn(zmq_source);
 
+    return TRUE;
+}
+
+gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+
     zmq_msg_t message;
     assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
     memcpy(zmq_msg_data(&message), buf, len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
 
-    if (G_UNLIKELY(r == -1)) {
-        g_info("send req message error (%d, %s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-    } else {
-        // add timeout before call error callback
-        if (timeoutms > 0U) {
-            pdata->timeout_handler = g_timeout_add(timeoutms, req_timeout_callback, pdata);
-            if (pdata->timeout_handler > 0U) {
-                pdata->timeoutms = timeoutms;
-            }
-        }
-        ret = TRUE;
-    }
-
-    return ret;
+    return _send_zmq_req_msg(zmq_source, timeoutms, &message, cb, user_data, notify);
 }
 
 gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf, int len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
     g_assert(buf != NULL);
-    g_assert(cb != NULL);
     g_assert(len > 0);
-    g_assert(zmq_source->type == EASY_ZMQ_REQ);
-
-    gboolean ret = FALSE;
-
-    req_callback_data_t *const pdata = g_slice_new0(req_callback_data_t);
-    pdata->zmq_source = zmq_source;
-    pdata->user_data = user_data;
-    pdata->notify = notify;
-    pdata->callback = cb;
-    pdata->timeout_handler = 0U;
-    pdata->timeoutms = 0U;
-
-    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)req_callback, pdata, req_callback_data_free);
-
-    if ((timeoutms) > 0U && (timeoutms < INT_MAX)) {
-        {
-            int itimeoutms = (int)timeoutms;
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &itimeoutms, sizeof(itimeoutms)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-                return FALSE;
-            }
-        }
-        {
-            int req_correlate = 1;
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-                // return FALSE;
-            }
-        }
-        {
-            int req_relaxed = 1;
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-                // return FALSE;
-            }
-        }
-    } else {
-        {
-            int itimeoutms = -1; // means default
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_SNDTIMEO, &itimeoutms, sizeof(itimeoutms)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-                return FALSE;
-            }
-        }
-        {
-            int req_correlate = 0;
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_CORRELATE, &req_correlate, sizeof(req_correlate)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-                // return FALSE;
-            }
-        }
-        {
-            int req_relaxed = 0;
-            if (_zmq_setsockopt(zmq_source->zmq_owned_socket, ZMQ_REQ_RELAXED, &req_relaxed, sizeof(req_relaxed)) != 0) {
-                g_info("error %s[%d] on zmq_setsockopt", clean_zmq_errno(), zmq_errno());
-                // g_source_set_callback((GSource *) zmq_source, (GSourceFunc) fake_callback, NULL, NULL);
-                // return FALSE;
-            }
-        }
-    }
 
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, ZMQ_SEND_FLAGS);
+    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, (void *)destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
 
-    if (G_UNLIKELY(r == -1)) {
-        g_info("send req message error (%d, %s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        g_source_set_callback((GSource *)zmq_source, (GSourceFunc)fake_callback, NULL, NULL);
-    } else {
-        // add timeout before call error callback
-        if (timeoutms > 0U) {
-            pdata->timeout_handler = g_timeout_add(timeoutms, req_timeout_callback, pdata);
-            if (pdata->timeout_handler > 0U) {
-                pdata->timeoutms = timeoutms;
-            } else {
-                g_error("g_timeout_add return invalid handler so call is with no timeout");
-            }
-        }
-        ret = TRUE;
-    }
-
-    return ret;
+    return _send_zmq_req_msg(zmq_source, timeoutms, &message, cb, user_data, notify);
 }
 
 // SUB SOCKET
