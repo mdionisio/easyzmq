@@ -1,5 +1,6 @@
 
 #include "easyzmq.h"
+#include "easyzmq-private.h"
 
 #include <glib.h>
 #include <limits.h>
@@ -163,20 +164,6 @@ void *get_zmq_context(void) {
  **/
 G_DEFINE_QUARK(easyzmq - error - quark, easyzmq_error)
 
-struct _ZmqSource {
-    GSource source;
-    gpointer fdtag;
-    int fd;
-    void *zmq_owned_socket;
-    void *msg_receive;
-    size_t size_receive;
-    gint ref_count;
-    easyzmq_socket_t type;
-    int send_flags; // ZMQ_DONTWAIT (default) or 0 (blocking send)
-    GZmqSource *zmq_source_monitor;
-    gpointer user_data;
-    GDestroyNotify destroy_user_data;
-};
 
 
 static void _pollfdOn(GZmqSource *source);
@@ -200,7 +187,8 @@ static gboolean _g_zmq_source_prepare(GSource *source, gint *timeout) {
             return FALSE;
         }
 
-        ret = (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
+        // ZMQ_EVENTS is read also when paused: it resets the zmq fd notification
+        ret = (!self->paused) && (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
 
         return ret;
     } else {
@@ -222,7 +210,7 @@ static gboolean _g_zmq_source_check(GSource *source) {
             return FALSE;
         }
 
-        ret = (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
+        ret = (!self->paused) && (zevents & (ZMQ_POLLIN | ZMQ_POLLERR));
 
         return ret;
     } else {
@@ -239,6 +227,10 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
         if (g_source_is_destroyed(source)) {
             // the source has been destroyed from inside a callback
             return G_SOURCE_REMOVE;
+        }
+        if (self->paused) {
+            // receive paused from inside a callback
+            return G_SOURCE_CONTINUE;
         }
         if (ISNOTNULL(self->zmq_owned_socket)) { // valid socket (using zeromq)
             int zevents = 0;
@@ -273,10 +265,14 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                         assert_errno(_zmq_getsockopt(self->zmq_owned_socket, ZMQ_RCVMORE, &more, &more_len) == 0, "error %s[%d] on zmq_getsockopt", clean_zmq_errno(), zmq_errno());
                         DBG("data recevied -> call callback (buffer: %p)", self->msg_receive);
                         last_part = (more == 0);
+                        self->current_buf = (const guint8 *)self->msg_receive;
+                        self->current_len = rc;
                         ret = zcallback(self,
-                                        (const guint8 *)self->msg_receive, 
-                                        rc, (more != 0) ? TRUE : FALSE, 
+                                        (const guint8 *)self->msg_receive,
+                                        rc, (more != 0) ? TRUE : FALSE,
                                         user_data);
+                        self->current_buf = NULL;
+                        self->current_len = 0;
                         DBG("data recevied -> call callback return:%d (buffer: %p)", (int)ret, self->msg_receive);
                     } else {
                         g_info("receive message when there is no subscription on it");
@@ -311,10 +307,12 @@ static gboolean _g_zmq_source_dispatch(GSource *source, GSourceFunc callback, gp
                             last_part = !zmq_msg_more(&msg);
                             if (ISNOTNULL(zcallback)) {
                                 DBG("data recevied -> call callback (msg: %p)", &msg);
-                                ret = zcallback(self, 
-                                    (const guint8 *)zmq_msg_data(&msg), 
+                                self->current_msg = &msg;
+                                ret = zcallback(self,
+                                    (const guint8 *)zmq_msg_data(&msg),
                                     (int)zmq_msg_size(&msg), // I think that this cast is always valid and also the variable size can be use
                                     zmq_msg_more(&msg), user_data);
+                                self->current_msg = NULL;
                                 DBG("data recevied -> call callback return :%d (msg: %p)", (int)ret, &msg);
                             } else {
                                 g_info("receive message when there is no subscription on it");
@@ -675,6 +673,45 @@ void g_easyzmq_set_blocking_send(GZmqSource *self, gboolean blocking) {
 gboolean g_easyzmq_get_blocking_send(GZmqSource *self) {
     g_return_val_if_fail(self != NULL, FALSE);
     return (self->send_flags & ZMQ_DONTWAIT) ? FALSE : TRUE;
+}
+
+static void _free_heap_msg(gpointer data) {
+    zmq_msg_t *const msg = (zmq_msg_t *)data;
+    assert_errno(zmq_msg_close(msg) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
+    g_slice_free(zmq_msg_t, msg);
+}
+
+GBytes *g_easyzmq_get_current_bytes(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, NULL);
+    if (ISNOTNULL(self->current_msg)) {
+        // zero copy (the zmq message data is reference counted, small messages are copied)
+        zmq_msg_t *const msg = g_slice_new(zmq_msg_t);
+        assert_errno(zmq_msg_init(msg) == 0, "error %s[%d] on zmq_msg_init", clean_zmq_errno(), zmq_errno());
+        assert_errno(zmq_msg_copy(msg, self->current_msg) == 0, "error %s[%d] on zmq_msg_copy", clean_zmq_errno(), zmq_errno());
+        return g_bytes_new_with_free_func(zmq_msg_data(msg), zmq_msg_size(msg), _free_heap_msg, msg);
+    } else if (ISNOTNULL(self->current_buf)) {
+        // pre-allocated buffer is reused for the next message
+        return g_bytes_new(self->current_buf, (gsize)self->current_len);
+    } else {
+        g_warning("g_easyzmq_get_current_bytes called outside a receive callback");
+        return NULL;
+    }
+}
+
+void g_easyzmq_set_paused(GZmqSource *self, gboolean paused) {
+    g_return_if_fail(self != NULL);
+    if (self->paused != paused) {
+        self->paused = paused;
+        if (!paused) {
+            // messages can be already queued: the main loop has to check them
+            g_main_context_wakeup(g_source_get_context((GSource *)self));
+        }
+    }
+}
+
+gboolean g_easyzmq_get_paused(GZmqSource *self) {
+    g_return_val_if_fail(self != NULL, FALSE);
+    return self->paused;
 }
 
 //

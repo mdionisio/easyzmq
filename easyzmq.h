@@ -137,6 +137,41 @@ gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_
 gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len);
 gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
 
+/** Return the frame under receive as GBytes (new reference). Valid only inside a receive
+ * callback. Without pre-allocated memory (max_mem_size == 0) the data is not copied.
+ */
+GBytes *g_easyzmq_get_current_bytes(GZmqSource *self);
+
+/** Pause/resume the receive: when paused the messages stay queued in zmq (up to the high
+ * water mark) and no callback is called.
+ */
+void g_easyzmq_set_paused(GZmqSource *self, gboolean paused);
+gboolean g_easyzmq_get_paused(GZmqSource *self);
+
+/* GTask based async API.
+ *
+ * request (REQ socket): send request and wait the answer.
+ *   errors: G_IO_ERROR_TIMED_OUT (timeoutms elapsed), G_IO_ERROR_CANCELLED,
+ *           EASY_ZMQ_ERROR (send error, code is the zmq errno).
+ *   With timeoutms == 0 the socket is in strict REQ mode: after a cancel a new request can
+ *   be sent only when the old answer is received (use a timeout to avoid it).
+ *
+ * receive (SUB, PAIR, REP, ...): wait the next message. More receive can be pending, they are
+ *   completed in order. When nobody is waiting the source is paused (messages stay in zmq).
+ *   Using recv_zmq_* (callback API) on the same source closes the pending receive
+ *   (G_IO_ERROR_CLOSED).
+ *
+ * _finish returns the message (multipart message: frames concatenated),
+ * _multipart_finish returns a GPtrArray of GBytes (one for each frame).
+ */
+void g_easyzmq_request_async(GZmqSource *req, GBytes *request, guint timeoutms, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
+GBytes *g_easyzmq_request_finish(GZmqSource *req, GAsyncResult *result, GError **error);
+GPtrArray *g_easyzmq_request_multipart_finish(GZmqSource *req, GAsyncResult *result, GError **error);
+
+void g_easyzmq_receive_async(GZmqSource *source, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
+GBytes *g_easyzmq_receive_finish(GZmqSource *source, GAsyncResult *result, GError **error);
+GPtrArray *g_easyzmq_receive_multipart_finish(GZmqSource *source, GAsyncResult *result, GError **error);
+
 void g_zmq_source_destroy(GZmqSource *self);
 
 static inline void g_zmq_source_close(GZmqSource **self) {

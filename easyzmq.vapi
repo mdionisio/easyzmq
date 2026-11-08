@@ -125,9 +125,38 @@ namespace EasyZmq {
         [CCode (cname = "send_zmq_req_take")]
         public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
 
+        // GTask based async API: errors GLib.IOError.TIMED_OUT, GLib.IOError.CANCELLED, EasyZmq.Error
+        // multipart answer: Request returns the frames concatenated, RequestMultipart one Bytes for each frame
+
+        [CCode (cname = "g_easyzmq_request_async", finish_name = "g_easyzmq_request_finish")]
+        public async GLib.Bytes Request (GLib.Bytes request, uint timeoutms = 0, GLib.Cancellable ? cancellable = null) throws GLib.Error;
+
+        [CCode (cname = "g_easyzmq_request_async", finish_name = "g_easyzmq_request_multipart_finish")]
+        public async GLib.GenericArray<GLib.Bytes> RequestMultipart (GLib.Bytes request, uint timeoutms = 0, GLib.Cancellable ? cancellable = null) throws GLib.Error;
+
+        // Sub, Pair, Rep: wait the next message (when nobody waits the source is paused)
+
+        [CCode (cname = "g_easyzmq_receive_async", finish_name = "g_easyzmq_receive_finish")]
+        public async GLib.Bytes Receive (GLib.Cancellable ? cancellable = null) throws GLib.Error;
+
+        [CCode (cname = "g_easyzmq_receive_async", finish_name = "g_easyzmq_receive_multipart_finish")]
+        public async GLib.GenericArray<GLib.Bytes> ReceiveMultipart (GLib.Cancellable ? cancellable = null) throws GLib.Error;
+
+        // frame under receive, valid only inside a receive callback (zero copy without pre-allocated memory)
+        [CCode (cname = "g_easyzmq_get_current_bytes")]
+        public GLib.Bytes ? GetCurrentBytes ();
+
+        public bool paused {
+            [CCode (cname = "g_easyzmq_get_paused")] get;
+            [CCode (cname = "g_easyzmq_set_paused")] set;
+        }
+
+        // old async API: bufout is valid only until the next yield
+        [Version (deprecated = true, replacement = "Request")]
         [CCode (cname = "send_zmq_req_async", finish_name = "send_zmq_req_finish")]
         public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
 
+        [Version (deprecated = true, replacement = "Request")]
         [CCode (cname = "send_zmq_req_take_async", finish_name = "send_zmq_req_finish")]
         public async void SendReqTake_async(uint timeoutms, owned uint8[] bufin, out unowned uint8[] bufout, out bool more);
 

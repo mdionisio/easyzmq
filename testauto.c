@@ -2,6 +2,7 @@
 
 #include "easyzmq.h"
 
+#include <gio/gio.h>
 #include <glib.h>
 #include <string.h>
 #include <zmq.h>
@@ -322,6 +323,135 @@ static void test_init_refcount(void) {
     g_assert(get_zmq_context() == ctx); // still valid: main is still a user
 }
 
+// ---- GTask async API
+
+typedef struct {
+    GBytes *bytes;
+    GError *error;
+    gboolean finished;
+} async_result_t;
+
+static void request_done(GObject *object, GAsyncResult *res, gpointer user_data) {
+    (void)object;
+    async_result_t *r = user_data;
+    r->bytes = g_easyzmq_request_finish(NULL, res, &r->error);
+    r->finished = TRUE;
+    g_main_loop_quit(loop);
+}
+
+static void receive_done(GObject *object, GAsyncResult *res, gpointer user_data) {
+    (void)object;
+    async_result_t *r = user_data;
+    r->bytes = g_easyzmq_receive_finish(NULL, res, &r->error);
+    r->finished = TRUE;
+}
+
+static void async_result_clear(async_result_t *r) {
+    if (r->bytes) {
+        g_bytes_unref(r->bytes);
+    }
+    g_clear_error(&r->error);
+    r->bytes = NULL;
+    r->finished = FALSE;
+}
+
+static void test_task_request(void) {
+    GZmqSource *rep = new_rep_server("inproc://task-req");
+    GZmqSource *req = g_zmq_source_req_new(0, NULL);
+    g_assert(g_easyzmq_connect(req, "inproc://task-req", NULL));
+
+    async_result_t r = {0};
+    GBytes *msg = g_bytes_new_static("ping", 4);
+    g_easyzmq_request_async(req, msg, 1000, NULL, request_done, &r);
+    run_loop_ms(2000);
+    g_assert(r.finished);
+    g_assert_no_error(r.error);
+    g_assert(g_bytes_equal(r.bytes, msg));
+    async_result_clear(&r);
+
+    // cancel: completed immediately with G_IO_ERROR_CANCELLED
+    GCancellable *cancellable = g_cancellable_new();
+    g_cancellable_cancel(cancellable);
+    g_easyzmq_request_async(req, msg, 1000, cancellable, request_done, &r);
+    run_loop_ms(2000);
+    g_assert_error(r.error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
+    async_result_clear(&r);
+    g_object_unref(cancellable);
+
+    g_zmq_source_close(&rep);
+
+    // timeout: nobody answers
+    GZmqSource *silent = g_zmq_source_rep_new(0, NULL);
+    g_assert(g_easyzmq_bind(silent, "inproc://task-silent", NULL));
+    g_assert(recv_zmq_rep(silent, silent_rep_cb, NULL, NULL));
+    GZmqSource *req2 = g_zmq_source_req_new(0, NULL);
+    g_assert(g_easyzmq_connect(req2, "inproc://task-silent", NULL));
+    g_easyzmq_request_async(req2, msg, 100, NULL, request_done, &r);
+    run_loop_ms(2000);
+    g_assert_error(r.error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT);
+    async_result_clear(&r);
+
+    g_bytes_unref(msg);
+    g_zmq_source_close(&req2);
+    g_zmq_source_close(&silent);
+    g_zmq_source_close(&req);
+}
+
+static void test_task_receive(void) {
+    GZmqSource *a = g_zmq_source_pair_new(0, NULL);
+    GZmqSource *b = g_zmq_source_pair_new(0, NULL);
+    g_assert(g_easyzmq_bind(a, "inproc://task-recv", NULL));
+    g_assert(g_easyzmq_connect(b, "inproc://task-recv", NULL));
+
+    // two pending receive completed in order
+    async_result_t r1 = {0}, r2 = {0};
+    g_easyzmq_receive_async(a, NULL, receive_done, &r1);
+    g_easyzmq_receive_async(a, NULL, receive_done, &r2);
+    g_assert(send_zmq_pair(b, (const guint8 *)"one", 3));
+    g_assert(send_zmq_pair(b, (const guint8 *)"two", 3));
+    run_loop_ms(200);
+    g_assert(r1.finished && r2.finished);
+    g_assert_no_error(r1.error);
+    g_assert_no_error(r2.error);
+    g_assert(memcmp(g_bytes_get_data(r1.bytes, NULL), "one", 3) == 0);
+    g_assert(memcmp(g_bytes_get_data(r2.bytes, NULL), "two", 3) == 0);
+    async_result_clear(&r1);
+    async_result_clear(&r2);
+
+    // nobody waiting: source paused, message kept in zmq
+    g_assert(g_easyzmq_get_paused(a));
+    g_assert(send_zmq_pair(b, (const guint8 *)"three", 5));
+    run_loop_ms(100);
+    g_easyzmq_receive_async(a, NULL, receive_done, &r1);
+    run_loop_ms(100);
+    g_assert(r1.finished);
+    g_assert_cmpuint(g_bytes_get_size(r1.bytes), ==, 5);
+    async_result_clear(&r1);
+
+    // cancel a pending receive
+    GCancellable *cancellable = g_cancellable_new();
+    g_easyzmq_receive_async(a, cancellable, receive_done, &r1);
+    run_loop_ms(50);
+    g_cancellable_cancel(cancellable);
+    run_loop_ms(50);
+    g_assert(r1.finished);
+    g_assert_error(r1.error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
+    async_result_clear(&r1);
+    g_object_unref(cancellable);
+
+    // switch to the callback API: pending receive closed
+    g_easyzmq_receive_async(a, NULL, receive_done, &r1);
+    g_assert(recv_zmq_pair(a, NULL, NULL, NULL));
+    run_loop_ms(50); // GTask callback is called from the main loop
+    g_assert(r1.finished);
+    g_assert_error(r1.error, G_IO_ERROR, G_IO_ERROR_CLOSED);
+    g_assert(!g_easyzmq_get_paused(a));
+    async_result_clear(&r1);
+
+    g_zmq_source_close(&b);
+    g_zmq_source_close(&a);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -336,6 +466,8 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/dontwait", test_dontwait);
     g_test_add_func("/easyzmq/from-socket", test_from_socket);
     g_test_add_func("/easyzmq/init-refcount", test_init_refcount);
+    g_test_add_func("/easyzmq/task-request", test_task_request);
+    g_test_add_func("/easyzmq/task-receive", test_task_receive);
 
     const int ret = g_test_run();
 
