@@ -142,6 +142,19 @@ namespace EasyZmq {
         [CCode (cname = "g_easyzmq_receive_async", finish_name = "g_easyzmq_receive_multipart_finish")]
         public async GLib.GenericArray<GLib.Bytes> ReceiveMultipart (GLib.Cancellable ? cancellable = null) throws GLib.Error;
 
+        // GBytes API (zero copy)
+
+        [CCode (cname = "GZmqSourceBytesFunc")]
+        public delegate bool BytesCallback (EasyZmq.ZmqSource zmq_source, GLib.Bytes ? data, bool more);
+
+        // Sub, Pair, Rep: data == null means receive error
+        [CCode (cname = "g_easyzmq_recv_bytes")]
+        public bool RecvBytes (owned BytesCallback cb);
+
+        // Pub, Pair, Rep
+        [CCode (cname = "g_easyzmq_send_bytes")]
+        public bool SendBytes (GLib.Bytes data);
+
         // frame under receive, valid only inside a receive callback (zero copy without pre-allocated memory)
         [CCode (cname = "g_easyzmq_get_current_bytes")]
         public GLib.Bytes ? GetCurrentBytes ();

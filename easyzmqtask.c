@@ -158,8 +158,7 @@ void g_easyzmq_request_async(GZmqSource *req, GBytes *request, guint timeoutms, 
     }
 
     // the request owns a reference of the task (released by the notify)
-    const guint8 *const data = g_bytes_get_data(request, NULL);
-    if (send_zmq_req(req, timeoutms, data, (int)size, request_cb, g_object_ref(task), g_object_unref)) {
+    if (send_zmq_req_bytes(req, timeoutms, request, request_cb, g_object_ref(task), g_object_unref)) {
         task_watch_cancellable(task, cancellable, NULL);
     } else {
         const int zerrno = zmq_errno();

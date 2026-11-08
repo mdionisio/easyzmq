@@ -452,6 +452,53 @@ static void test_task_receive(void) {
     g_zmq_source_close(&a);
 }
 
+// ---- GBytes API
+
+static GPtrArray *bytes_received = NULL;
+
+static gboolean bytes_cb(G_GNUC_UNUSED GZmqSource *zmq_source, GBytes *data, G_GNUC_UNUSED gboolean more, gpointer user_data) {
+    g_assert(data != NULL);
+    g_assert(user_data == GINT_TO_POINTER(3));
+    // the bytes are kept after the callback
+    g_ptr_array_add(bytes_received, g_bytes_ref(data));
+    return G_SOURCE_CONTINUE;
+}
+
+static void test_bytes(void) {
+    for (int prealloc = 0; prealloc <= 1; prealloc++) {
+        bytes_received = g_ptr_array_new_with_free_func((GDestroyNotify)g_bytes_unref);
+        GZmqSource *a = g_zmq_source_pair_new(prealloc ? 1024 : 0, NULL);
+        GZmqSource *b = g_zmq_source_pair_new(0, NULL);
+        // zmq releases a closed endpoint asynchronously: one endpoint for each iteration
+        const char *const endpoint = prealloc ? "inproc://bytes-prealloc" : "inproc://bytes";
+        g_assert(g_easyzmq_bind(a, endpoint, NULL));
+        g_assert(g_easyzmq_connect(b, endpoint, NULL));
+        g_assert(g_easyzmq_recv_bytes(a, bytes_cb, GINT_TO_POINTER(3), NULL));
+
+        // small (copied by zmq) and big (reference counted) messages
+        guint8 big[1000];
+        memset(big, 0xA5, sizeof(big));
+        GBytes *small_msg = g_bytes_new("small", 5);
+        GBytes *big_msg = g_bytes_new(big, sizeof(big));
+        g_assert(g_easyzmq_send_bytes(b, small_msg));
+        g_assert(g_easyzmq_send_bytes(b, big_msg));
+        g_assert(g_easyzmq_send_bytes(b, small_msg));
+        run_loop_ms(100);
+
+        g_assert_cmpuint(bytes_received->len, ==, 3);
+        g_assert(g_bytes_equal(g_ptr_array_index(bytes_received, 0), small_msg));
+        g_assert(g_bytes_equal(g_ptr_array_index(bytes_received, 1), big_msg));
+        g_assert(g_bytes_equal(g_ptr_array_index(bytes_received, 2), small_msg));
+
+        g_bytes_unref(small_msg);
+        g_bytes_unref(big_msg);
+        g_zmq_source_close(&b);
+        g_zmq_source_close(&a);
+        g_ptr_array_unref(bytes_received); // released after the sockets
+        bytes_received = NULL;
+    }
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -468,6 +515,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/init-refcount", test_init_refcount);
     g_test_add_func("/easyzmq/task-request", test_task_request);
     g_test_add_func("/easyzmq/task-receive", test_task_receive);
+    g_test_add_func("/easyzmq/bytes", test_bytes);
 
     const int ret = g_test_run();
 

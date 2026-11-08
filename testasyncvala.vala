@@ -112,6 +112,27 @@ async int client () throws Error {
         print ("cancelled as expected\n");
     }
 
+    // 5) GBytes callback API (lambda with captured variables)
+    var pair_a = new EasyZmq.ZmqSource.Pair ();
+    var pair_b = new EasyZmq.ZmqSource.Pair ();
+    pair_a.Bind ("inproc://example-pair");
+    pair_b.Connect ("inproc://example-pair");
+    var received = new GenericArray<Bytes> ();
+    pair_a.RecvBytes ((source, data, more) => {
+        received.add (data);
+        if (received.length == 2) {
+            client.callback ();
+        }
+        return true;
+    });
+    pair_b.SendBytes (new Bytes ("first".data));
+    pair_b.SendBytes (new Bytes ("second".data));
+    yield;
+    print ("pair received: '%s' '%s'\n", str (received[0]), str (received[1]));
+    if (str (received[1]) != "second") {
+        errors++;
+    }
+
     return errors;
 }
 

@@ -137,6 +137,18 @@ gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_
 gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len);
 gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data);
 
+/* GBytes API: zero copy send (the message keeps a reference of the bytes) and receive
+ * (without pre-allocated memory the received data is not copied).
+ */
+typedef gboolean (*GZmqSourceBytesFunc)(GZmqSource *zmq_source, GBytes *data, gboolean more, gpointer user_data);
+
+/** register the receive callback (SUB, PAIR, REP), data == NULL means receive error */
+gboolean g_easyzmq_recv_bytes(GZmqSource *zmq_source, GZmqSourceBytesFunc cb, gpointer user_data, GDestroyNotify notify);
+/** send on PUB, PAIR, REP */
+gboolean g_easyzmq_send_bytes(GZmqSource *zmq_source, GBytes *bytes);
+gboolean send_zmq_req_bytes(GZmqSource *zmq_source, guint timeoutms, GBytes *bytes, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify);
+gboolean send_zmq_router_bytes(GZmqSource *zmq_source, void *identity, GBytes *bytes);
+
 /** Return the frame under receive as GBytes (new reference). Valid only inside a receive
  * callback. Without pre-allocated memory (max_mem_size == 0) the data is not copied.
  */

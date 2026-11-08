@@ -723,6 +723,117 @@ static void my_zmq_free_fn(void *data, void *hint) {
     }
 }
 
+static void _bytes_free_fn(void *data, void *hint) {
+    (void)data;
+    g_bytes_unref((GBytes *)hint);
+}
+
+static void _msg_init_copy(zmq_msg_t *message, const guint8 *buf, int len) {
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+    assert_errno(zmq_msg_init_size(message, (size_t)len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
+    memcpy(zmq_msg_data(message), buf, (size_t)len);
+}
+
+static void _msg_init_take(zmq_msg_t *message, guint8 *buf, int len, GDestroyNotify destroy_data) {
+    g_assert(buf != NULL);
+    g_assert(len > 0);
+    assert_errno(zmq_msg_init_data(message, buf, (size_t)len, my_zmq_free_fn, (void *)destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
+}
+
+// zero copy: the message keeps a reference of bytes
+static void _msg_init_bytes(zmq_msg_t *message, GBytes *bytes) {
+    g_assert(bytes != NULL);
+    gsize size = 0;
+    gconstpointer const data = g_bytes_get_data(bytes, &size);
+    if (size == 0) {
+        assert_errno(zmq_msg_init_size(message, 0) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
+    } else {
+        assert_errno(zmq_msg_init_data(message, (void *)data, size, _bytes_free_fn, g_bytes_ref(bytes)) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
+    }
+}
+
+// send a message (always consumed, also in case of error)
+static gboolean _send_msg(GZmqSource *zmq_source, zmq_msg_t *message, int flags) {
+    g_assert(zmq_source != NULL);
+    g_assert(zmq_source->zmq_owned_socket != NULL);
+
+    if (zmq_source->type == EASY_ZMQ_REP) {
+        _pollfdOn(zmq_source); // after the answer the next request can be received
+    }
+
+    if (G_UNLIKELY(_zmq_msg_send(message, zmq_source->zmq_owned_socket, zmq_source->send_flags | flags) == -1)) {
+        g_debug("send message error (%d,%s)", zmq_errno(), clean_zmq_errno());
+        assert_errno(zmq_msg_close(message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static gboolean _type_can_send(easyzmq_socket_t type) {
+    switch (type) {
+    case EASY_ZMQ_PUB:
+    case EASY_ZMQ_REP:
+    case EASY_ZMQ_PAIR:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+gboolean g_easyzmq_send_bytes(GZmqSource *zmq_source, GBytes *bytes) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail(bytes != NULL, FALSE);
+    g_return_val_if_fail(_type_can_send(zmq_source->type), FALSE);
+
+    zmq_msg_t message;
+    _msg_init_bytes(&message, bytes);
+    return _send_msg(zmq_source, &message, 0);
+}
+
+// receive with GBytes
+
+typedef struct bytes_callback_data {
+    GZmqSourceBytesFunc callback;
+    gpointer user_data;
+    GDestroyNotify notify;
+} bytes_callback_data_t;
+
+static void bytes_callback_data_free(gpointer data) {
+    bytes_callback_data_t *const pdata = (bytes_callback_data_t *)data;
+    if (ISNOTNULL(pdata->notify) && ISNOTNULL(pdata->user_data)) {
+        pdata->notify(pdata->user_data);
+    }
+    g_slice_free(bytes_callback_data_t, pdata);
+}
+
+static gboolean bytes_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
+    (void)len;
+    bytes_callback_data_t *const pdata = (bytes_callback_data_t *)user_data;
+    GBytes *const bytes = ISNOTNULL(buf) ? g_easyzmq_get_current_bytes(zmq_source) : NULL;
+    g_zmq_source_ref(zmq_source);
+    if (ISNOTNULL(pdata->callback)) {
+        pdata->callback(zmq_source, bytes, more, pdata->user_data);
+    }
+    g_zmq_source_unref(zmq_source);
+    if (ISNOTNULL(bytes)) {
+        g_bytes_unref(bytes);
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+gboolean g_easyzmq_recv_bytes(GZmqSource *zmq_source, GZmqSourceBytesFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_return_val_if_fail(zmq_source != NULL, FALSE);
+    g_return_val_if_fail((zmq_source->type != EASY_ZMQ_REQ) && (zmq_source->type != EASY_ZMQ_PUB) && (zmq_source->type != EASY_ZMQ_ROUTER), FALSE);
+
+    bytes_callback_data_t *const pdata = g_slice_new0(bytes_callback_data_t);
+    pdata->callback = cb;
+    pdata->user_data = user_data;
+    pdata->notify = notify;
+    g_source_set_callback((GSource *)zmq_source, (GSourceFunc)(void *)bytes_callback, pdata, bytes_callback_data_free);
+    return TRUE;
+}
+
 // RESPONSE SOCKET
 
 typedef struct rep_callback_data {
@@ -777,49 +888,20 @@ gboolean recv_zmq_rep(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_d
 
 gboolean send_zmq_rep(GZmqSource *zmq_source, const guint8 *buf, int len) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_REP);
 
-    _pollfdOn(zmq_source);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (G_UNLIKELY(r == -1)) {
-        _pollfdOff(zmq_source);
-        g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        return FALSE;
-    } else {
-        return TRUE;
-    }
+    _msg_init_copy(&message, buf, len);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 gboolean send_zmq_rep_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_REP);
 
-    _pollfdOn(zmq_source);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (G_UNLIKELY(r == -1)) {
-        _pollfdOff(zmq_source);
-        g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        return FALSE;
-    } else {
-        return TRUE;
-    }
+    _msg_init_take(&message, buf, len, destroy_data);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 // ROUTER SOCKET
@@ -990,22 +1072,22 @@ static gboolean _send_router_msg(GZmqSource *zmq_source, void *pdata, zmq_msg_t 
 }
 
 gboolean send_zmq_router(GZmqSource *zmq_source, void *pdata, const guint8 *buf, int len) {
-    g_assert(buf != NULL);
-    g_assert(len > 0);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, len);
+    _msg_init_copy(&message, buf, len);
     return _send_router_msg(zmq_source, pdata, &message);
 }
 
 gboolean send_zmq_router_take(GZmqSource *zmq_source, void *pdata, guint8 *buf, int len, GDestroyNotify destroy_data) {
-    g_assert(buf != NULL);
-    g_assert(len > 0);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, (void *)destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
+    _msg_init_take(&message, buf, len, destroy_data);
     return _send_router_msg(zmq_source, pdata, &message);
+}
+
+gboolean send_zmq_router_bytes(GZmqSource *zmq_source, void *identity, GBytes *bytes) {
+    g_return_val_if_fail(bytes != NULL, FALSE);
+    zmq_msg_t message;
+    _msg_init_bytes(&message, bytes);
+    return _send_router_msg(zmq_source, identity, &message);
 }
 
 // REQUEST SOCKET
@@ -1172,23 +1254,21 @@ static gboolean _send_zmq_req_msg(GZmqSource *zmq_source, guint timeoutms, zmq_m
 }
 
 gboolean send_zmq_req(GZmqSource *zmq_source, guint timeoutms, const guint8 *buf, int len, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    g_assert(buf != NULL);
-    g_assert(len > 0);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, len);
-
+    _msg_init_copy(&message, buf, len);
     return _send_zmq_req_msg(zmq_source, timeoutms, &message, cb, user_data, notify);
 }
 
 gboolean send_zmq_req_take(GZmqSource *zmq_source, guint timeoutms, guint8 *buf, int len, GDestroyNotify destroy_data, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
-    g_assert(buf != NULL);
-    g_assert(len > 0);
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, (void *)destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
+    _msg_init_take(&message, buf, len, destroy_data);
+    return _send_zmq_req_msg(zmq_source, timeoutms, &message, cb, user_data, notify);
+}
 
+gboolean send_zmq_req_bytes(GZmqSource *zmq_source, guint timeoutms, GBytes *bytes, GZmqSourceFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_return_val_if_fail(bytes != NULL, FALSE);
+    zmq_msg_t message;
+    _msg_init_bytes(&message, bytes);
     return _send_zmq_req_msg(zmq_source, timeoutms, &message, cb, user_data, notify);
 }
 
@@ -1256,49 +1336,20 @@ gboolean recv_zmq_sub(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_d
 
 gboolean send_zmq_pub(GZmqSource *zmq_source, const guint8 *buf, int len) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_PUB);
 
-    gboolean ret = FALSE;
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (r == -1) {
-        g_debug("send pub message error (%d, %s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-    } else {
-        ret = TRUE;
-    }
-
-    return ret;
+    _msg_init_copy(&message, buf, len);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 gboolean send_zmq_pub_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_PUB);
 
-    gboolean ret = FALSE;
-
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (r == -1) {
-        g_debug("send pub message error (%d, %s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-    } else {
-        ret = TRUE;
-    }
-
-    return ret;
+    _msg_init_take(&message, buf, len, destroy_data);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 // PAIR SOCKET
@@ -1316,43 +1367,20 @@ gboolean recv_zmq_pair(GZmqSource *zmq_source, GZmqSourceFunc cb, gpointer user_
 
 gboolean send_zmq_pair(GZmqSource *zmq_source, const guint8 *buf, int len) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_PAIR);
 
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_size(&message, len) == 0, "error %s[%d] on zmq_msg_init_size", clean_zmq_errno(), zmq_errno());
-    memcpy(zmq_msg_data(&message), buf, (size_t)len);
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (G_UNLIKELY(r == -1)) {
-        g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        return FALSE;
-    } else {
-        return TRUE;
-    }
+    _msg_init_copy(&message, buf, len);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 gboolean send_zmq_pair_take(GZmqSource *zmq_source, guint8 *buf, int len, GDestroyNotify destroy_data) {
     g_assert(zmq_source != NULL);
-    g_assert(zmq_source->zmq_owned_socket != NULL);
-    g_assert(buf != NULL);
-    g_assert(len > 0);
     g_assert(zmq_source->type == EASY_ZMQ_PAIR);
 
     zmq_msg_t message;
-    assert_errno(zmq_msg_init_data(&message, buf, len, my_zmq_free_fn, destroy_data) == 0, "error %s[%d] on zmq_msg_init_data", clean_zmq_errno(), zmq_errno());
-    int r = _zmq_msg_send(&message, zmq_source->zmq_owned_socket, zmq_source->send_flags);
-
-    if (G_UNLIKELY(r == -1)) {
-        g_debug("send resp message error (%d,%s)", zmq_errno(), clean_zmq_errno());
-        assert_errno(zmq_msg_close(&message) == 0, "error %s[%d] on zmq_msg_close", clean_zmq_errno(), zmq_errno());
-        return FALSE;
-    } else {
-        return TRUE;
-    }
+    _msg_init_take(&message, buf, len, destroy_data);
+    return _send_msg(zmq_source, &message, 0);
 }
 
 // Monitor
