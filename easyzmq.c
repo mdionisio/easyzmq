@@ -1534,55 +1534,73 @@ typedef struct monitor_callback_data {
     int state;
     guint32 value;
     easyzmq_monitor_event_t event;
-    GZmqMonitorFunc callback;
+    GZmqMonitorFunc callback;          // old API: some events discarded, no user_data
+    GZmqMonitorFullFunc full_callback; // all events, with user_data
+    gpointer user_data;
+    GDestroyNotify notify;
 } monitor_callback_data_t;
 
 static void monitor_callback_data_free(gpointer data) {
-    g_slice_free(monitor_callback_data_t, data);
+    monitor_callback_data_t *const pdata = (monitor_callback_data_t *)data;
+    if (ISNOTNULL(pdata->notify) && ISNOTNULL(pdata->user_data)) {
+        pdata->notify(pdata->user_data);
+    }
+    g_slice_free(monitor_callback_data_t, pdata);
+}
+
+static easyzmq_monitor_event_t _monitor_event_from_zmq(guint16 zmq_event) {
+    switch (zmq_event) {
+    case ZMQ_EVENT_CONNECTED:
+        return EASYZMQ_EVENT_CONNECTED;
+    case ZMQ_EVENT_CONNECT_DELAYED:
+        return EASYZMQ_EVENT_CONNECT_DELAYED;
+    case ZMQ_EVENT_CONNECT_RETRIED:
+        return EASYZMQ_EVENT_CONNECT_RETRIED;
+    case ZMQ_EVENT_LISTENING:
+        return EASYZMQ_EVENT_LISTENING;
+    case ZMQ_EVENT_BIND_FAILED:
+        return EASYZMQ_EVENT_BIND_FAILED;
+    case ZMQ_EVENT_ACCEPTED:
+        return EASYZMQ_EVENT_ACCEPTED;
+    case ZMQ_EVENT_ACCEPT_FAILED:
+        return EASYZMQ_EVENT_ACCEPT_FAILED;
+    case ZMQ_EVENT_CLOSED:
+        return EASYZMQ_EVENT_CLOSED;
+    case ZMQ_EVENT_CLOSE_FAILED:
+        return EASYZMQ_EVENT_CLOSE_FAILED;
+    case ZMQ_EVENT_DISCONNECTED:
+        return EASYZMQ_EVENT_DISCONNECTED;
+    case ZMQ_EVENT_MONITOR_STOPPED:
+        return EASYZMQ_EVENT_MONITOR_STOPPED;
+#ifdef ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL // libzmq >= 4.3
+    case ZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL:
+        return EASYZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL;
+    case ZMQ_EVENT_HANDSHAKE_SUCCEEDED:
+        return EASYZMQ_EVENT_HANDSHAKE_SUCCEEDED;
+    case ZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL:
+        return EASYZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL;
+    case ZMQ_EVENT_HANDSHAKE_FAILED_AUTH:
+        return EASYZMQ_EVENT_HANDSHAKE_FAILED_AUTH;
+#endif
+    default:
+        return EASYZMQ_EVENT_UNKNOWN;
+    }
 }
 
 static gboolean get_easyzmq_monitor_event(const guint8 *buf, int len, easyzmq_monitor_event_t *event, guint32 *value) {
     // The first frame contains an event number (16 bits), and an event value (32 bits) that provides additional data according to the event number.
     if (6 == len) {
         g_assert(buf != NULL);
-        struct {
-            guint16 event;
-            guint32 value;
-        } __attribute__((packed)) decoded_buffer;
-        g_assert(len == sizeof(decoded_buffer));
-
-        memcpy(&decoded_buffer, buf, sizeof(decoded_buffer));
+        guint16 zmq_event = 0;
+        guint32 zmq_value = 0;
+        memcpy(&zmq_event, buf, sizeof(zmq_event));
+        memcpy(&zmq_value, buf + sizeof(zmq_event), sizeof(zmq_value));
         if (value) {
-            *value = decoded_buffer.value;
+            *value = zmq_value;
         }
         if (event) {
-            if (decoded_buffer.event & ZMQ_EVENT_CONNECTED) {
-                *event = EASYZMQ_EVENT_CONNECTED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_CONNECT_DELAYED) {
-                *event = EASYZMQ_EVENT_CONNECT_DELAYED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_CONNECT_RETRIED) {
-                *event = EASYZMQ_EVENT_CONNECT_RETRIED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_LISTENING) {
-                *event = EASYZMQ_EVENT_LISTENING;
-            } else if (decoded_buffer.event & ZMQ_EVENT_BIND_FAILED) {
-                *event = EASYZMQ_EVENT_BIND_FAILED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_ACCEPTED) {
-                *event = EASYZMQ_EVENT_ACCEPTED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_ACCEPT_FAILED) {
-                *event = EASYZMQ_EVENT_ACCEPT_FAILED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_CLOSED) {
-                *event = EASYZMQ_EVENT_CLOSED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_CLOSE_FAILED) {
-                *event = EASYZMQ_EVENT_CLOSE_FAILED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_DISCONNECTED) {
-                *event = EASYZMQ_EVENT_DISCONNECTED;
-            } else if (decoded_buffer.event & ZMQ_EVENT_MONITOR_STOPPED) {
-                *event = EASYZMQ_EVENT_MONITOR_STOPPED;
-            } else {
-                *event = EASYZMQ_EVENT_UNKNOWN;
-            }
+            *event = _monitor_event_from_zmq(zmq_event);
         }
-
         return TRUE;
     } else {
         g_warning("monitor socket message not well formatted");
@@ -1603,21 +1621,24 @@ static gboolean monitor_callback(GZmqSource *zmq_source, const guint8 *buf, int 
     }
 
     if (more) {
-        g_assert(pdata->state == 0);
-        if (get_easyzmq_monitor_event(buf, len, &(pdata->event), &(pdata->value))) {
+        if ((pdata->state == 0) && get_easyzmq_monitor_event(buf, len, &(pdata->event), &(pdata->value))) {
             pdata->state = 1;
         } else {
-            g_error("size error");
+            pdata->state = 2; // discard the message
         }
     } else {
-        g_assert(pdata->state == 1);
+        const int state = pdata->state;
         pdata->state = 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wenum-compare"
-        if ((pdata->callback) && (pdata->event != EASYZMQ_EVENT_CONNECT_DELAYED) && (pdata->event != EASYZMQ_EVENT_CONNECT_RETRIED) && (pdata->event != EASYZMQ_EVENT_CLOSED)) {
+        if (state != 1) {
+            return TRUE;
+        }
+        if (ISNOTNULL(pdata->full_callback)) {
+            gchar *const address = g_strndup((const gchar *)buf, (gsize)len);
+            pdata->full_callback(zmq_source, pdata->event, pdata->value, address, pdata->user_data);
+            g_free(address);
+        } else if ((pdata->callback) && (pdata->event != EASYZMQ_EVENT_CONNECT_DELAYED) && (pdata->event != EASYZMQ_EVENT_CONNECT_RETRIED) && (pdata->event != EASYZMQ_EVENT_CLOSED) && (pdata->event <= EASYZMQ_EVENT_MONITOR_STOPPED)) {
             pdata->callback(zmq_source, pdata->event, pdata->value, buf, len);
         }
-#pragma GCC diagnostic pop
     }
 
     return TRUE;
@@ -1625,44 +1646,60 @@ static gboolean monitor_callback(GZmqSource *zmq_source, const guint8 *buf, int 
 
 #define ZMQ_EVENT_ATTACHED (ZMQ_EVENT_ALL)
 
-GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) {
+// create the monitor (if needed) and register the callback data, return a new reference
+static GZmqSource *_get_zmq_socket_monitor(GZmqSource *zmq_source, monitor_callback_data_t *pdata) {
     g_assert(zmq_source != NULL);
     g_assert(zmq_source->zmq_owned_socket != NULL);
+    g_assert(pdata != NULL);
+
     if (ISNULL(zmq_source->zmq_source_monitor)) {
         guint unique = get_unique();
         gchar address[48];
         g_snprintf(address, G_N_ELEMENTS(address), "inproc://easyzmq-monitor-%u", unique);
 
-        if (zmq_socket_monitor(zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ATTACHED) == 0) {
-            zmq_source->zmq_source_monitor = g_zmq_source_pair_new(0, g_source_get_context((GSource *)zmq_source));
-            if (ISNULL(zmq_source->zmq_source_monitor)) {
-                g_warning("error creating monitor pair socket");
-                zmq_socket_monitor(zmq_source->zmq_owned_socket, NULL, 0);
-                return NULL;
-            }
-
-            monitor_callback_data_t *const pdata = g_slice_new0(monitor_callback_data_t);
-            g_assert(pdata != NULL);
-            pdata->state = 0;
-            pdata->callback = cb;
-
-            recv_zmq_pair(zmq_source->zmq_source_monitor, monitor_callback, pdata, monitor_callback_data_free);
-
-            if (!g_easyzmq_connect(zmq_source->zmq_source_monitor, address, NULL)) {
-                g_zmq_source_unref(zmq_source->zmq_source_monitor);
-                zmq_source->zmq_source_monitor = NULL;
-            } else {
-                g_zmq_source_ref(zmq_source->zmq_source_monitor);
-            }
-
-        } else {
+        if (zmq_socket_monitor(zmq_source->zmq_owned_socket, address, ZMQ_EVENT_ATTACHED) != 0) {
             g_warning("error creating monitor socket: %s", clean_zmq_errno());
+            monitor_callback_data_free(pdata);
+            return NULL;
         }
-
-        return zmq_source->zmq_source_monitor;
+        GZmqSource *const monitor = g_zmq_source_pair_new(0, g_source_get_context((GSource *)zmq_source));
+        if (ISNULL(monitor)) {
+            g_warning("error creating monitor pair socket");
+            zmq_socket_monitor(zmq_source->zmq_owned_socket, NULL, 0);
+            monitor_callback_data_free(pdata);
+            return NULL;
+        }
+        recv_zmq_pair(monitor, monitor_callback, pdata, monitor_callback_data_free);
+        if (!g_easyzmq_connect(monitor, address, NULL)) {
+            zmq_socket_monitor(zmq_source->zmq_owned_socket, NULL, 0);
+            g_zmq_source_unref(monitor);
+            return NULL;
+        }
+        zmq_source->zmq_source_monitor = monitor; // reference owned by the monitored source
     } else {
-        g_assert(cb == NULL);
-        g_zmq_source_ref(zmq_source->zmq_source_monitor);
-        return zmq_source->zmq_source_monitor;
+        // replace the callback of the existing monitor
+        recv_zmq_pair(zmq_source->zmq_source_monitor, monitor_callback, pdata, monitor_callback_data_free);
     }
+
+    return g_zmq_source_ref(zmq_source->zmq_source_monitor);
+}
+
+GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cb) {
+    g_assert(zmq_source != NULL);
+    if (ISNOTNULL(zmq_source->zmq_source_monitor) && ISNULL(cb)) {
+        // only a new reference of the existing monitor
+        return g_zmq_source_ref(zmq_source->zmq_source_monitor);
+    }
+    monitor_callback_data_t *const pdata = g_slice_new0(monitor_callback_data_t);
+    pdata->callback = cb;
+    return _get_zmq_socket_monitor(zmq_source, pdata);
+}
+
+GZmqSource *get_zmq_socket_monitor_full(GZmqSource *zmq_source, GZmqMonitorFullFunc cb, gpointer user_data, GDestroyNotify notify) {
+    g_assert(zmq_source != NULL);
+    monitor_callback_data_t *const pdata = g_slice_new0(monitor_callback_data_t);
+    pdata->full_callback = cb;
+    pdata->user_data = user_data;
+    pdata->notify = notify;
+    return _get_zmq_socket_monitor(zmq_source, pdata);
 }

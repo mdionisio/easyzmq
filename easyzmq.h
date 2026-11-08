@@ -48,7 +48,12 @@ typedef enum {
     EASYZMQ_EVENT_CLOSED, // DISCARDED from callback
     EASYZMQ_EVENT_CLOSE_FAILED,
     EASYZMQ_EVENT_DISCONNECTED,
-    EASYZMQ_EVENT_MONITOR_STOPPED
+    EASYZMQ_EVENT_MONITOR_STOPPED,
+    // libzmq >= 4.3 (only with get_zmq_socket_monitor_full)
+    EASYZMQ_EVENT_HANDSHAKE_FAILED_NO_DETAIL,
+    EASYZMQ_EVENT_HANDSHAKE_SUCCEEDED,
+    EASYZMQ_EVENT_HANDSHAKE_FAILED_PROTOCOL,
+    EASYZMQ_EVENT_HANDSHAKE_FAILED_AUTH
 } easyzmq_monitor_event_t;
 
 /** Reference counted initialization: every easy_zmq_init / easy_zmq_init_with_context has
@@ -108,6 +113,13 @@ void *g_easyzmq_get_socket(GZmqSource *self);
 
 typedef void (*GZmqMonitorFunc)(GZmqSource *zmq_source, easyzmq_monitor_event_t event, guint32 value, const guint8 *address, int len);
 GZmqSource *get_zmq_socket_monitor(GZmqSource *zmq_source, GZmqMonitorFunc cp) G_GNUC_MALLOC;
+
+/** Monitor with user_data and all the events (also CONNECT_DELAYED, CONNECT_RETRIED, CLOSED and
+ * the handshake events). address is the endpoint as string. If the monitor already exists its
+ * callback is replaced. Returns a new reference of the monitor source.
+ */
+typedef void (*GZmqMonitorFullFunc)(GZmqSource *monitor, easyzmq_monitor_event_t event, guint32 value, const gchar *address, gpointer user_data);
+GZmqSource *get_zmq_socket_monitor_full(GZmqSource *zmq_source, GZmqMonitorFullFunc cb, gpointer user_data, GDestroyNotify notify) G_GNUC_MALLOC;
 
 gboolean g_easyzmq_bind(GZmqSource *source, const char *addr, GError **error);
 gboolean g_easyzmq_unbind(GZmqSource *source, const char *addr, GError **error);

@@ -35,7 +35,11 @@ namespace EasyZmq {
         CLOSED,
         CLOSE_FAILED,
         DISCONNECTED,
-        MONITOR_STOPPED;
+        MONITOR_STOPPED,
+        HANDSHAKE_FAILED_NO_DETAIL,
+        HANDSHAKE_SUCCEEDED,
+        HANDSHAKE_FAILED_PROTOCOL,
+        HANDSHAKE_FAILED_AUTH;
     }
 
     [CCode (cname = "easyzmq_socket_t", cprefix = "EASY_ZMQ_", has_type_id = false)]
@@ -186,6 +190,13 @@ namespace EasyZmq {
 
         [CCode (cname = "get_zmq_socket_monitor")]
         public EasyZmq.ZmqSource Monitor (monitor_callback ? cb = null);
+
+        // all events, closure allowed
+        [CCode (cname = "GZmqMonitorFullFunc")]
+        public delegate void MonitorCallback (EasyZmq.ZmqSource monitor, EasyZmq.monitor_event event, uint32 value, string address);
+
+        [CCode (cname = "get_zmq_socket_monitor_full")]
+        public EasyZmq.ZmqSource MonitorFull (owned MonitorCallback cb);
 
         [CCode (cname = "g_easyzmq_bind")]
         public bool Bind (string addr) throws EasyZmq.Error;

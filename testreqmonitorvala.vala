@@ -27,9 +27,6 @@ bool callback (EasyZmq.ZmqSource zmq_source, uint8[] buf, bool more, void * user
     return true;
 }
 
-void monitor_callback (EasyZmq.ZmqSource zmq_source, EasyZmq.monitor_event event, uint32 value, uint8[] buf) {
-    stdout.printf ("event: %u value: %u address: %.*s\n", (uint) event, (uint) value, buf.length, (string) buf);
-}
 
 void main () {
     loop = new MainLoop ();
@@ -37,11 +34,19 @@ void main () {
 
     try {
         var req = new EasyZmq.ZmqSource.Req ();
-        req.Monitor (monitor_callback);
+        // all the events (also connect retried, closed and handshake), closure allowed
+        int retries = 0;
+        var monitor = req.MonitorFull ((m, event, value, address) => {
+            if (event == EasyZmq.monitor_event.CONNECT_RETRIED) {
+                retries++;
+            }
+            stdout.printf ("event: %s value: %u address: %s (retries: %d)\n", event.to_string (), (uint) value, address, retries);
+        });
         req.Connect ("tcp://127.0.0.1:5555");
         req.SendReq (20000, "pippo".data, callback);
 
         loop.run ();
+        monitor = null;
         stdout.printf ("closed\n");
     } catch (EasyZmq.Error er) {
         stdout.printf ("error connect\n");

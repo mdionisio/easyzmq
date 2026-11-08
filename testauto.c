@@ -640,6 +640,49 @@ static void test_multipart(void) {
     g_zmq_source_close(&a);
 }
 
+// ---- monitor
+
+static GPtrArray *monitor_events = NULL;
+static int monitor_notify = 0;
+
+static void monitor_full_cb(G_GNUC_UNUSED GZmqSource *monitor, easyzmq_monitor_event_t event, G_GNUC_UNUSED guint32 value, const gchar *address, gpointer user_data) {
+    g_assert(user_data == GINT_TO_POINTER(9));
+    g_assert(address != NULL);
+    g_ptr_array_add(monitor_events, g_strdup_printf("%d %s", (int)event, address));
+}
+
+static void monitor_notify_cb(G_GNUC_UNUSED gpointer data) {
+    monitor_notify++;
+}
+
+static void test_monitor(void) {
+    monitor_events = g_ptr_array_new_with_free_func(g_free);
+    GZmqSource *rep = g_zmq_source_rep_new(0, NULL);
+    GZmqSource *monitor = get_zmq_socket_monitor_full(rep, monitor_full_cb, GINT_TO_POINTER(9), monitor_notify_cb);
+    g_assert(monitor != NULL);
+    g_assert(g_easyzmq_bind(rep, "tcp://127.0.0.1:*", NULL));
+    gchar *endpoint = g_easyzmq_get_option_string(rep, ZMQ_LAST_ENDPOINT, NULL);
+    GZmqSource *req = g_zmq_source_req_new(0, NULL);
+    g_assert(g_easyzmq_connect(req, endpoint, NULL));
+    run_loop_ms(300);
+    // LISTENING and ACCEPTED (and HANDSHAKE_SUCCEEDED with libzmq >= 4.3)
+    gboolean listening = FALSE, accepted = FALSE;
+    for (guint i = 0; i < monitor_events->len; i++) {
+        const gchar *e = g_ptr_array_index(monitor_events, i);
+        listening |= g_str_has_prefix(e, "4 tcp://127.0.0.1:");
+        accepted |= g_str_has_prefix(e, "6 tcp://127.0.0.1:");
+    }
+    g_assert(listening);
+    g_assert(accepted);
+    g_free(endpoint);
+    g_zmq_source_close(&req);
+    g_zmq_source_unref(monitor);
+    g_zmq_source_close(&rep);
+    g_assert_cmpint(monitor_notify, ==, 1);
+    g_ptr_array_unref(monitor_events);
+    monitor_events = NULL;
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -660,6 +703,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/options", test_options);
     g_test_add_func("/easyzmq/types", test_types);
     g_test_add_func("/easyzmq/multipart", test_multipart);
+    g_test_add_func("/easyzmq/monitor", test_monitor);
 
     const int ret = g_test_run();
 
