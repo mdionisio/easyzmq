@@ -1,0 +1,3 @@
+option('tests', type : 'boolean', value : true, description : 'build the automatic tests')
+option('examples', type : 'boolean', value : true, description : 'build the C examples')
+option('examples_vala', type : 'feature', value : 'auto', description : 'build the vala examples (needs valac)')
