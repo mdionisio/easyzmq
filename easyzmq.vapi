@@ -1,5 +1,7 @@
 [CCode (cheader_filename = "easyzmq.h")]
 namespace EasyZmq {
+    // the GError code is the zmq errno value
+    [CCode (cname = "int", cprefix = "", cheader_filename = "errno.h,zmq.h,easyzmq.h")]
     public errordomain Error {
         EINVAL,
         EPROTONOSUPPORT,
@@ -12,7 +14,11 @@ namespace EasyZmq {
         EADDRINUSE,
         EADDRNOTAVAIL,
         ENODEV,
-        EINTR;
+        EINTR,
+        EAGAIN,
+        EFSM,
+        EHOSTUNREACH;
+        [CCode (cname = "easyzmq_error_quark")]
         public static GLib.Quark quark ();
     }
 
@@ -83,10 +89,10 @@ namespace EasyZmq {
         // Request
 
         [CCode (cname = "send_zmq_req")]
-        public bool SendReq(uint timeoutms, uint8[] buf, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+        public bool SendReq(uint timeoutms, uint8[] buf, callback cb, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
         
         [CCode (cname = "send_zmq_req_take")]
-        public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
+        public bool SendReqTake(uint timeoutms, owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free, callback ? cb = null, void* user_data = null, GLib.DestroyNotify ? udestroy = null);
 
         [CCode (cname = "send_zmq_req_async", finish_name = "send_zmq_req_finish")]
         public async void SendReq_async(uint timeoutms, uint8[] bufin, out unowned uint8[] bufout, out bool more);
@@ -103,7 +109,7 @@ namespace EasyZmq {
         public bool SendRep(uint8[] buf);
         
         [CCode (cname = "send_zmq_rep_take")]
-        public bool SendRepTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null);
+        public bool SendRepTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free);
 
         // Publisher
 
@@ -111,7 +117,7 @@ namespace EasyZmq {
         public bool SendPub(uint8[] buf);
         
         [CCode (cname = "send_zmq_pub_take")]
-        public bool SendPubTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = null);
+        public bool SendPubTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free);
 
         // Subscriber
 
@@ -125,6 +131,15 @@ namespace EasyZmq {
         public bool UnsubscribeSub(uint8[] filter) throws EasyZmq.Error;
 
         // Pair
+
+        [CCode (cname = "recv_zmq_pair")]
+        public bool RecvPair(callback cb, void* user_data = null, GLib.DestroyNotify ? unotify = null);
+
+        [CCode (cname = "send_zmq_pair")]
+        public bool SendPair(uint8[] buf);
+
+        [CCode (cname = "send_zmq_pair_take")]
+        public bool SendPairTake(owned uint8[] buf, GLib.DestroyNotify ? ddestroy = GLib.free);
 
     }
 }
