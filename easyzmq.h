@@ -45,7 +45,15 @@ typedef enum {
     EASYZMQ_EVENT_MONITOR_STOPPED
 } easyzmq_monitor_event_t;
 
+/** Reference counted initialization: every easy_zmq_init / easy_zmq_init_with_context has
+ * to be balanced by easy_zmq_deinit. The context is terminated by the last easy_zmq_deinit
+ * (all the sources have to be closed before, zmq_ctx_term blocks until all sockets are closed).
+ */
 void easy_zmq_init(void);
+/** As easy_zmq_init but using a zmq context created by the user (never terminated by easyzmq).
+ * If easyzmq is already initialized the existing context is used.
+ */
+void easy_zmq_init_with_context(void *context);
 void easy_zmq_deinit(void);
 void *get_zmq_context(void);
 

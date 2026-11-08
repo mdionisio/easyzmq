@@ -310,6 +310,18 @@ static void test_from_socket(void) {
     g_zmq_source_close(&a);
 }
 
+// ---- init is reference counted
+
+static void test_init_refcount(void) {
+    void *const ctx = get_zmq_context();
+    easy_zmq_init(); // second user (main already initialized)
+    g_assert(get_zmq_context() == ctx);
+    easy_zmq_init_with_context(ctx);
+    easy_zmq_deinit();
+    easy_zmq_deinit();
+    g_assert(get_zmq_context() == ctx); // still valid: main is still a user
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     easy_zmq_init();
@@ -323,6 +335,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/easyzmq/close-in-callback", test_close_in_callback);
     g_test_add_func("/easyzmq/dontwait", test_dontwait);
     g_test_add_func("/easyzmq/from-socket", test_from_socket);
+    g_test_add_func("/easyzmq/init-refcount", test_init_refcount);
 
     const int ret = g_test_run();
 

@@ -93,23 +93,59 @@ static guint get_unique(void) {
 }
 
 static void *zmq_context = NULL;
+static gboolean zmq_context_owned = FALSE;
+static guint zmq_context_users = 0U;
+G_LOCK_DEFINE_STATIC(zmq_context);
+
+static void _easy_zmq_init(void *external_context) {
+    G_LOCK(zmq_context);
+    if (zmq_context_users == 0U) {
+        g_assert(zmq_context == NULL);
+        if (ISNOTNULL(external_context)) {
+            zmq_context = external_context;
+            zmq_context_owned = FALSE;
+        } else {
+            zmq_context = zmq_ctx_new();
+            zmq_context_owned = TRUE;
+        }
+        g_assert(zmq_context != NULL);
+    } else if (ISNOTNULL(external_context) && (external_context != zmq_context)) {
+        g_warning("easy_zmq_init_with_context: already initialized with a different context (ignored)");
+    }
+    zmq_context_users++;
+    G_UNLOCK(zmq_context);
+}
 
 void easy_zmq_init(void) {
-    if (ISNULL(zmq_context)) {
-        zmq_context = zmq_ctx_new();
-    } else {
-        g_warning("easy_zmq_init already initilized");
-    }
-    g_assert(zmq_context != NULL);
+    _easy_zmq_init(NULL);
+}
+
+void easy_zmq_init_with_context(void *context) {
+    g_return_if_fail(context != NULL);
+    _easy_zmq_init(context);
 }
 
 void easy_zmq_deinit(void) {
-    if (ISNOTNULL(zmq_context)) {
-        void *const zmq_old_context = zmq_context;
-        zmq_context = NULL;
-        zmq_ctx_term(zmq_old_context);
+    void *zmq_old_context = NULL;
+    gboolean owned = FALSE;
+
+    G_LOCK(zmq_context);
+    if (zmq_context_users > 0U) {
+        zmq_context_users--;
+        if (zmq_context_users == 0U) {
+            zmq_old_context = zmq_context;
+            owned = zmq_context_owned;
+            zmq_context = NULL;
+            zmq_context_owned = FALSE;
+        }
     } else {
-        g_warning("easy_zmq_deinit already destroyed");
+        g_warning("easy_zmq_deinit without easy_zmq_init");
+    }
+    G_UNLOCK(zmq_context);
+
+    if (ISNOTNULL(zmq_old_context) && owned) {
+        // outside the lock: it blocks until all the sockets are closed
+        zmq_ctx_term(zmq_old_context);
     }
 }
 

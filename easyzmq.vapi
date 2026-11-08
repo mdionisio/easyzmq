@@ -52,6 +52,9 @@ namespace EasyZmq {
     [CCode (cname = "easy_zmq_init")]
     public void Init();
 
+    [CCode (cname = "easy_zmq_init_with_context")]
+    public void InitWithContext(void* zmq_context);
+
     [CCode (cname = "easy_zmq_deinit")]
     public void Deinit();
 
