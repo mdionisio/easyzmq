@@ -662,7 +662,13 @@ typedef struct rep_callback_data {
 
 static void rep_callback_data_free(gpointer data) {
     g_assert(data != NULL);
-    g_slice_free(rep_callback_data_t, data);
+    rep_callback_data_t *const pdata = (rep_callback_data_t *)data;
+    // user_data is valid for all the messages received, so it is released
+    // only when the callback is replaced or the source is destroyed
+    if (ISNOTNULL(pdata->notify) && ISNOTNULL(pdata->user_data)) {
+        pdata->notify(pdata->user_data);
+    }
+    g_slice_free(rep_callback_data_t, pdata);
 }
 
 static gboolean rep_callback(GZmqSource *zmq_source, const guint8 *buf, int len, gboolean more, gpointer user_data) {
@@ -678,13 +684,6 @@ static gboolean rep_callback(GZmqSource *zmq_source, const guint8 *buf, int len,
     g_zmq_source_ref(zmq_source);
     if (ISNOTNULL(pdata->callback)) {
         pdata->callback(zmq_source, buf, len, more, pdata->user_data);
-    }
-    if (!more) {
-        if (ISNOTNULL(pdata->notify) && ISNOTNULL(pdata->user_data)) {
-            pdata->notify(pdata->user_data);
-        }
-        pdata->notify = NULL;
-        pdata->user_data = NULL;
     }
     g_zmq_source_unref(zmq_source);
 
